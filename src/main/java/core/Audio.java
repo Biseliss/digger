@@ -5,12 +5,14 @@ import java.util.HashMap;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
+import javax.sound.sampled.LineEvent;
 
 public class Audio {
-    Clip clip;
+    private Clip clip;
+    private boolean playing;
     // store resource paths instead of InputStreams so we can open a fresh stream each
     // time
-    HashMap<String, String> soundFiles = new HashMap<>();
+    private final HashMap<String, String> soundFiles = new HashMap<>();
 
     public Audio() {
         soundFiles.put("Soundtrack", "/sounds/soundtrack.wav");
@@ -37,6 +39,11 @@ public class Audio {
             try (AudioInputStream ais = AudioSystem.getAudioInputStream(getClass().getResource(soundFiles.get(key)))) {
                 clip = AudioSystem.getClip();
                 clip.open(ais);
+                clip.addLineListener(event -> {
+                    if (event.getType() == LineEvent.Type.STOP) {
+                        playing = false;
+                    }
+                });
             }
 
         } catch (Exception e) {
@@ -46,26 +53,30 @@ public class Audio {
 
     public void play() {
         if (clip == null) return;
+        if (playing) return;
 
         try {
-            if (clip.isRunning()) {
-                clip.stop();
-            }
+            clip.stop();
             clip.setFramePosition(0);
             clip.start();
+            playing = true;
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
     public void loop() {
-        if (clip != null)
+        if (clip != null) {
             clip.loop(Clip.LOOP_CONTINUOUSLY);
+            playing = true;
+        }
     }
 
     public void stop() {
-        if (clip != null)
+        if (clip != null) {
             clip.stop();
+            playing = false;
+        }
     }
 
 }
