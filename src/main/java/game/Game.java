@@ -58,8 +58,8 @@ public class Game implements Scene {
     private long lastTime = System.currentTimeMillis();
 
 
-    public Audio music; // для звуков будет public Audio sounds; это по сути звуковые дорожки отдельные
-    public Audio sfx;
+    public Audio music;
+    public Audio sfx_dig; 
 
     public Game(Input input, int screenW, int screenH) {
         this.input = input;
@@ -79,7 +79,11 @@ public class Game implements Scene {
         hud.addChild(new HudView(this, screenW, screenH));
 
         music = new Audio();
-        sfx = new Audio();
+        
+        sfx_dig = new Audio();
+        sfx_dig.setFile("SFX_Dig");
+
+
         music.setFile("Soundtrack"); // подгружает музыку из регистра, однако я потом сделаю поиск по названию файла а не индексу в списке, это временно.
         music.loop(); // проигрывает и лупит её, есть функция play(), она играет без лупа один раз, подходит для отдельных звуков 
     }
@@ -159,8 +163,7 @@ public class Game implements Scene {
                 showMessage("Can't carry more " + ore.displayName, 1.5);
             }
         }
-        // sfx.setFile("SFX_Dig");
-        // sfx.play();
+        sfx_dig.play();
     }
 
     private void handleInteractions() {

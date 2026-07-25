@@ -45,8 +45,17 @@ public class Audio {
     }
 
     public void play() {
-        if (clip != null)
+        if (clip == null) return;
+
+        try {
+            if (clip.isRunning()) {
+                clip.stop();
+            }
+            clip.setFramePosition(0);
             clip.start();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public void loop() {
