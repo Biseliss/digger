@@ -25,6 +25,15 @@ public final class Textures {
     }
 
     /**
+     * Есть ли такой файл в /textures, без загрузки в кэш и без вывода
+     * ошибки в stderr. Нужен, например, чтобы Animation могла перебирать
+     * кадры "base_0", "base_1", ... пока они существуют.
+     */
+    public static boolean exists(String name) {
+        return Textures.class.getResource("/textures/" + name + ".png") != null;
+    }
+
+    /**
      * Повёрнутый вариант текстуры (0/90/180/270).
      *
      * Повороты предрассчитываются один раз и кладутся в кэш: крутить каждый
