@@ -30,6 +30,10 @@ public class Field {
     private final java.util.HashSet<Long> visited = new java.util.HashSet<>();
     private static final int[][] NEIGHBOURS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
+    /** Одна анимация на всю лаву в мире — кадр общий, тикается в Field.tick. */
+    private final game.render.Animation lavaAnimation =
+            new game.render.Animation("lava/lava", Constants.LAVA_FRAME_TIME);
+
     public Field() {
         int chunksY = (Constants.WORLD_H + Constants.CHUNK_H - 1) / Constants.CHUNK_H;
         for (int cx = 0; cx < Constants.WORLD_CHUNKS_X; cx++) {
@@ -305,6 +309,8 @@ public class Field {
     // --- тик мира ---
 
     public void tick(double dt, Player player) {
+        lavaAnimation.tick(dt);
+
         for (Iterator<FallingBlock> it = falling.iterator(); it.hasNext(); ) {
             FallingBlock fb = it.next();
             int cur = fb.tileY();
@@ -350,6 +356,8 @@ public class Field {
             }
         }
 
+        drawLava(g, camX, camY, viewW, viewH);
+
         // падающий гравий рисуем поверх — он вне сетки чанков
         for (FallingBlock fb : falling) {
             int sx = (int) Math.round((fb.tileX * Constants.TILE - camX) * scale);
@@ -358,5 +366,47 @@ public class Field {
                     sx, sy, Constants.TILE * scale, Constants.TILE * scale, null);
         }
 
+    }
+
+    /**
+     * Лава рисуется отдельным проходом, а не из кэша чанка: она анимирована,
+     * и запекать её в кэш значило бы пересобирать чанк каждый кадр.
+     *
+     * Проход дешёвый — идём только по тайлам, попавшим в кадр (это пара сотен
+     * клеток), и берём один общий кадр анимации на всю лаву.
+     */
+    private void drawLava(Graphics2D g, double camX, double camY, int viewW, int viewH) {
+        int scale = Constants.SCALE;
+        int size = Constants.TILE * scale;
+
+        int firstTx = (int) Math.floor(camX / Constants.TILE);
+        int firstTy = (int) Math.floor(camY / Constants.TILE);
+        int lastTx = (int) Math.ceil((camX + viewW / (double) scale) / Constants.TILE);
+        int lastTy = (int) Math.ceil((camY + viewH / (double) scale) / Constants.TILE);
+
+        var frame = lavaAnimation.currentFrame();
+        var src = game.render.Textures.opaqueBounds(frame);
+
+        for (int tx = firstTx; tx <= lastTx; tx++) {
+            for (int ty = firstTy; ty <= lastTy; ty++) {
+                if (!inBounds(tx, ty)) continue;
+                Block b = getBlock(tx, ty);
+                if (b.getType() != BlockType.LAVA) continue;
+                if (!b.isRevealed()) continue;   // туман войны (п.7) действует и на лаву
+
+                int sx = (int) Math.round((tx * Constants.TILE - camX) * scale);
+                int sy = (int) Math.round((ty * Constants.TILE - camY) * scale);
+                // непрозрачную часть кадра растягиваем на всю клетку, иначе
+                // между тайлами лужи видны щели (см. Textures.opaqueBounds)
+                g.drawImage(frame, sx, sy, sx + size, sy + size,
+                        src.x, src.y, src.x + src.width, src.y + src.height, null);
+
+                int shade = Chunk.depthShade(ty);
+                if (shade > 0) {
+                    g.setColor(Chunk.shadeColor(shade));
+                    g.fillRect(sx, sy, size, size);
+                }
+            }
+        }
     }
 }

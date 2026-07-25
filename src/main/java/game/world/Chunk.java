@@ -133,7 +133,9 @@ public class Chunk {
                         g.fillRect(dx, dy, Constants.TILE, Constants.TILE);
                     }
 
-                    if (!b.isAir()) {
+                    // Лава анимирована, поэтому в статический кэш не запекается —
+                    // её рисует Field отдельным проходом поверх (см. Field.draw).
+                    if (!b.isAir() && b.getType() != BlockType.LAVA) {
                         int rot = b.getType().isRotatable() ? b.getRotation() : 0;
                         g.drawImage(Textures.get(b.getType().texture, rot),
                                 dx, dy, Constants.TILE, Constants.TILE, null);
@@ -157,15 +159,19 @@ public class Chunk {
         }
     }
 
-    /** Лёгкое затемнение с глубиной — простая математика по Y, без доп. ассетов (п.11). */
-    private static int depthShade(int worldY) {
+    /**
+     * Лёгкое затемнение с глубиной — простая математика по Y, без доп. ассетов (п.11).
+     * Package-private: тем же затемнением Field накрывает анимированную лаву,
+     * которая рисуется мимо кэша чанка.
+     */
+    static int depthShade(int worldY) {
         int depth = worldY - Constants.SURFACE_Y;
         if (depth <= 0) return 0;
         return Math.min(MAX_SHADE, depth / 3);
     }
 
     /** Цвета затемнения заранее — иначе это тысячи new Color на пересборку чанка. */
-    private static Color shadeColor(int shade) {
+    static Color shadeColor(int shade) {
         return SHADES[shade];
     }
 }

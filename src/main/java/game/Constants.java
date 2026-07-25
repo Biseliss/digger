@@ -61,8 +61,10 @@ public final class Constants {
     public static final double DYNAMITE_FUSE = 2.5;                   // сек, успеть отбежать
     public static final double DYNAMITE_RADIUS = 3;                   // тайлы
     public static final int DYNAMITE_MAX_DAMAGE = 60;                 // в эпицентре, спадает к краю
-    public static final double EXPLOSION_ANIM_TIME = 0.45;            // сколько играет вспышка
-    public static final int EXPLOSION_FRAMES = 4;
+    public static final double EXPLOSION_ANIM_TIME = 0.55;            // сколько играет вспышка
+
+    // --- Анимации (число кадров берётся из файлов, тут только тайминги) ---
+    public static final double LAVA_FRAME_TIME = 0.14;                // сек на кадр кипящей лавы
 
     // --- Лестницы (п.8): обычный ставящийся блок, как в Minecraft ---
     public static final int LADDER_CARRY_LIMIT = 32;      // размер стака

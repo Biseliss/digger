@@ -17,11 +17,44 @@ import javax.imageio.ImageIO;
 public final class Textures {
     private static final Map<String, BufferedImage> CACHE = new HashMap<>();
     private static final Map<String, BufferedImage> ROTATED = new HashMap<>();
+    private static final Map<BufferedImage, java.awt.Rectangle> BOUNDS = new java.util.IdentityHashMap<>();
 
     private Textures() {}
 
     public static BufferedImage get(String name) {
         return CACHE.computeIfAbsent(name, Textures::load);
+    }
+
+    /**
+     * Прямоугольник непрозрачной части картинки (x, y, w, h).
+     *
+     * Нужен для тайлов, которые обязаны заполнять клетку целиком — например,
+     * лава: в текущем паке её кадры нарисованы с прозрачными боковыми
+     * столбцами, и при отрисовке «как есть» между тайлами лужи видны щели.
+     * Рисуя именно эту область на весь тайл, получаем сплошную жидкость, а
+     * если кадры перерисуют во всю ширину — область совпадёт с картинкой и
+     * поведение не изменится.
+     */
+    public static java.awt.Rectangle opaqueBounds(BufferedImage img) {
+        return BOUNDS.computeIfAbsent(img, Textures::computeOpaqueBounds);
+    }
+
+    private static java.awt.Rectangle computeOpaqueBounds(BufferedImage img) {
+        int w = img.getWidth();
+        int h = img.getHeight();
+        int minX = w, minY = h, maxX = -1, maxY = -1;
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if ((img.getRGB(x, y) >>> 24) < 128) continue;
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+        }
+        if (maxX < 0) return new java.awt.Rectangle(0, 0, w, h);   // кадр пуст — рисуем как есть
+        return new java.awt.Rectangle(minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
     /**

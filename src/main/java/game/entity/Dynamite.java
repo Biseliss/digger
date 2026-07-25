@@ -2,7 +2,7 @@ package game.entity;
 
 import game.Constants;
 import game.item.OreType;
-import game.render.Textures;
+import game.render.Animation;
 import game.world.Block;
 import game.world.Field;
 
@@ -24,6 +24,16 @@ public class Dynamite {
     /** Сколько ещё показывать вспышку после срабатывания. */
     private double explosionTimer;
 
+    /**
+     * Обе анимации ведём по прогрессу, а не по своему таймеру: фитиль обязан
+     * догореть ровно к моменту взрыва, а вспышка — закончиться вместе с
+     * explosionTimer. Иначе кадры и логика разъезжаются при смене констант.
+     */
+    private final Animation fuseAnim =
+            Animation.overDuration("dynamite/dynamite", Constants.DYNAMITE_FUSE, false);
+    private final Animation blastAnim =
+            Animation.overDuration("explosion/explosion", Constants.EXPLOSION_ANIM_TIME, false);
+
     public Dynamite(double tileX, double tileY) {
         this.tileX = tileX;
         this.tileY = tileY;
@@ -37,14 +47,18 @@ public class Dynamite {
     public void tick(double dt, Field field, Player player) {
         if (exploded) {
             explosionTimer -= dt;
+            blastAnim.setProgress(1 - explosionTimer / Constants.EXPLOSION_ANIM_TIME);
             return;
         }
 
         fuse -= dt;
+        // фитиль догорает ровно к взрыву: прогресс — доля прошедшего времени
+        fuseAnim.setProgress(1 - fuse / Constants.DYNAMITE_FUSE);
         if (fuse > 0) return;
 
         exploded = true;
         explosionTimer = Constants.EXPLOSION_ANIM_TIME;
+        blastAnim.reset();
         explode(field, player);
     }
 
@@ -91,18 +105,14 @@ public class Dynamite {
         int sy = (int) Math.round((tileY * Constants.TILE - camY) * scale);
 
         if (!exploded) {
-            g.drawImage(Textures.get("dynamite"), sx, sy, size, size, null);
+            g.drawImage(fuseAnim.currentFrame(), sx, sy, size, size, null);
             return;
         }
         if (explosionTimer <= 0) return;
 
-        // вспышка на месте заряда: кадр выбирается по остатку таймера
-        int frames = Constants.EXPLOSION_FRAMES;
-        double progress = 1.0 - explosionTimer / Constants.EXPLOSION_ANIM_TIME;
-        int frame = Math.min(frames - 1, (int) (progress * frames));
-
+        // вспышка накрывает весь радиус поражения, а не один тайл
         int burst = (int) (Constants.DYNAMITE_RADIUS * 2 + 1) * size;
-        g.drawImage(Textures.get("explosion_" + frame),
+        g.drawImage(blastAnim.currentFrame(),
                 sx + size / 2 - burst / 2, sy + size / 2 - burst / 2, burst, burst, null);
     }
 }
