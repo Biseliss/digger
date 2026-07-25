@@ -1,10 +1,5 @@
 package core;
 
-import java.io.BufferedInputStream;
-import java.io.InputStream;
-import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.HashMap;
 
 import javax.sound.sampled.AudioInputStream;
@@ -13,17 +8,13 @@ import javax.sound.sampled.Clip;
 
 public class Audio {
     Clip clip;
-    // store file paths instead of InputStreams so we can open a fresh stream each
+    // store resource paths instead of InputStreams so we can open a fresh stream each
     // time
     HashMap<String, String> soundFiles = new HashMap<>();
 
     public Audio() {
-        try {
-            soundFiles.put("Soundtrack", Paths.get(getClass().getResource("/sounds/soundtrack.wav").toURI()).toString());
-            soundFiles.put("SFX_Dig", Paths.get(getClass().getResource("/sounds/sfx_dig.wav").toURI()).toString());
-        } catch (URISyntaxException e) {
-            System.out.println("Path doesn't exist or is wrong");
-        }
+        soundFiles.put("Soundtrack", "/sounds/soundtrack.wav");
+        soundFiles.put("SFX_Dig", "/sounds/sfx_dig.wav");
     }
 
     public void setFile(String key) {
@@ -41,11 +32,9 @@ public class Audio {
                 }
             }
 
-            // open a fresh buffered stream for each request so the stream is at the file
-            // start
-            try (InputStream in = new BufferedInputStream(Files.newInputStream(Paths.get(soundFiles.get(key))));
-                    AudioInputStream ais = AudioSystem.getAudioInputStream(in)) {
-
+            // reopen the resource each time so the stream is at the file start;
+            // getResource works both when running from files and from a packaged jar
+            try (AudioInputStream ais = AudioSystem.getAudioInputStream(getClass().getResource(soundFiles.get(key)))) {
                 clip = AudioSystem.getClip();
                 clip.open(ais);
             }
