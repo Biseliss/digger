@@ -1,0 +1,10 @@
+target/
+*.class
+.idea/
+*.iml
+.github
+
+CLAUDE.md
+game.txt
+TODO.txt
+README.md
