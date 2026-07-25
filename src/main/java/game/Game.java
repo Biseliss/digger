@@ -1,5 +1,14 @@
 package game;
 
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
+import core.Audio;
 import core.Input;
 import core.Scene;
 import game.entity.Dynamite;
@@ -16,16 +25,8 @@ import game.render.Textures;
 import game.world.BlockType;
 import game.world.Field;
 import game.world.WorldGenerator;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.event.KeyEvent;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
 import ui.DrawCtx;
 import ui.Screen;
-
 
 /** Склейка всего: мир, игрок, NPC, свет и HUD под одним tick/draw. */
 public class Game implements Scene {
@@ -51,6 +52,9 @@ public class Game implements Scene {
     private int frames = 0;
     private long lastTime = System.currentTimeMillis();
 
+
+    public Audio music; // для звуков будет public Audio sounds; это по сути звуковые дорожки отдельные
+
     public Game(Input input, int screenW, int screenH) {
         this.input = input;
 
@@ -67,6 +71,10 @@ public class Game implements Scene {
 
         this.hud = new Screen(screenW, screenH);
         hud.addChild(new HudView(this, screenW, screenH));
+
+        Audio music = new Audio();
+        music.setFile(0); // подгружает музыку из регистра, однако я потом сделаю поиск по названию файла а не индексу в списке, это временно.
+        music.loop(); // проигрывает и лупит её, есть функция play(), она играет без лупа один раз, подходит для отдельных звуков 
     }
 
     public Player getPlayer() { return player; }
