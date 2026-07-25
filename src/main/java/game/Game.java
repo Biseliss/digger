@@ -218,8 +218,8 @@ public class Game implements Scene {
             if (ore != null && !player.addOre(ore)) {
                 showMessage("Can't carry more " + ore.displayName, 1.5);
             }
+            sfx_dig.play();
         }
-        sfx_dig.play();
     }
 
     private void handleInteractions() {
