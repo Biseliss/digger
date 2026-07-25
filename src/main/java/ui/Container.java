@@ -65,6 +65,12 @@ public class Container extends UIObject {
         super.detach();
     }
 
+    /**
+     * Кто «съел» нажатие: ему же уходят drag и release, даже если курсор
+     * успел уехать за границы элемента (мышиный захват).
+     */
+    private UIObject mouseCapture;
+
     // Input dispatch: reverse child order, so the element drawn last
     // (topmost, on top of everything else) gets the first chance to consume.
     @Override
@@ -74,6 +80,7 @@ public class Container extends UIObject {
             if (!child.isVisible()) continue;
             if (contains(child, localX, localY)) {
                 if (child.handleMousePressed(localX - child.getX(), localY - child.getY(), button)) {
+                    mouseCapture = child;
                     return true;
                 }
             }
@@ -82,7 +89,23 @@ public class Container extends UIObject {
     }
 
     @Override
+    public boolean handleMouseDragged(int localX, int localY) {
+        if (mouseCapture == null) return false;
+        return mouseCapture.handleMouseDragged(
+                localX - mouseCapture.getX(), localY - mouseCapture.getY());
+    }
+
+    @Override
     public boolean handleMouseReleased(int localX, int localY, int button) {
+        // захваченный элемент получает release в любом случае — иначе кнопка
+        // осталась бы «вдавленной», если мышь отпустили мимо неё
+        if (mouseCapture != null) {
+            UIObject target = mouseCapture;
+            mouseCapture = null;
+            return target.handleMouseReleased(
+                    localX - target.getX(), localY - target.getY(), button);
+        }
+
         for (int i = children.size() - 1; i >= 0; i--) {
             UIObject child = children.get(i);
             if (!child.isVisible()) continue;

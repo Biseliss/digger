@@ -65,6 +65,15 @@ public abstract class UIObject {
         return false;
     }
 
+    /**
+     * Мышь двигают с зажатой кнопкой. Приходит только тому элементу, который
+     * «съел» нажатие, и даже если курсор уже ушёл за его границы — иначе
+     * слайдер бросало бы, стоит чуть промахнуться мимо дорожки.
+     */
+    public boolean handleMouseDragged(int localX, int localY) {
+        return false;
+    }
+
     public int getId() {
         return id;
     }

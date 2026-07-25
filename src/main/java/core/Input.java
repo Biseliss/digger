@@ -18,6 +18,8 @@ public class Input {
     private int mouseX, mouseY;
     private boolean leftDown, rightDown;
     private int wheelDelta;
+    /** Фронты нажатия/отпускания ЛКМ — нужны UI (клик по кнопке, захват слайдера). */
+    private boolean leftPressedEdge, leftReleasedEdge;
 
     synchronized void keyDown(int code) {
         if (down.add(code)) pressed.add(code);
@@ -33,7 +35,11 @@ public class Input {
     }
 
     synchronized void mouseButton(int button, boolean isDown) {
-        if (button == java.awt.event.MouseEvent.BUTTON1) leftDown = isDown;
+        if (button == java.awt.event.MouseEvent.BUTTON1) {
+            if (isDown && !leftDown) leftPressedEdge = true;
+            if (!isDown && leftDown) leftReleasedEdge = true;
+            leftDown = isDown;
+        }
         if (button == java.awt.event.MouseEvent.BUTTON3) rightDown = isDown;
     }
 
@@ -63,6 +69,11 @@ public class Input {
     public synchronized boolean isLeftDown() { return leftDown; }
     public synchronized boolean isRightDown() { return rightDown; }
 
+    /** true один раз на нажатие ЛКМ — чтобы клик не срабатывал каждый кадр. */
+    public synchronized boolean wasLeftPressed() { return leftPressedEdge; }
+
+    public synchronized boolean wasLeftReleased() { return leftReleasedEdge; }
+
     /** Накопленные щелчки колеса; вызывается один раз за кадр. */
     public synchronized int consumeWheel() {
         int d = wheelDelta;
@@ -73,5 +84,7 @@ public class Input {
     /** Вызывается игровым циклом в конце кадра. */
     public synchronized void endFrame() {
         pressed.clear();
+        leftPressedEdge = false;
+        leftReleasedEdge = false;
     }
 }

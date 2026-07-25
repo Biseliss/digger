@@ -14,6 +14,7 @@ import core.Scene;
 import game.entity.Dynamite;
 import game.entity.Player;
 import game.hud.HudView;
+import game.hud.PauseView;
 import game.item.OreType;
 import game.item.UtilityType;
 import game.npc.NpcPoint;
@@ -50,6 +51,10 @@ public class Game implements Scene {
     private double overlayTimer;
     private boolean won;
 
+    /** Пауза: игровой тик не выполняется, поверх кадра рисуется свой экран. */
+    private boolean paused;
+    private final Screen pauseScreen;
+
     /** Счётчик кадров для отметки «блок виден прямо сейчас» (п.7). */
     private int visibilityFrame;
 
@@ -79,24 +84,58 @@ public class Game implements Scene {
         hud.addChild(new HudView(this, screenW, screenH));
 
         music = new Audio();
-        
+
         sfx_dig = new Audio();
         sfx_dig.setFile("SFX_Dig");
 
 
         music.setFile("Soundtrack"); // подгружает музыку из регистра, однако я потом сделаю поиск по названию файла а не индексу в списке, это временно.
-        music.loop(); // проигрывает и лупит её, есть функция play(), она играет без лупа один раз, подходит для отдельных звуков 
+        music.loop(); // проигрывает и лупит её, есть функция play(), она играет без лупа один раз, подходит для отдельных звуков
+
+        // строго после аудио: ползунки читают стартовую громкость из Audio
+        this.pauseScreen = buildPauseScreen(screenW, screenH);
+    }
+
+    /**
+     * Экран паузы: затемнение с памяткой (PauseView) плюс два ползунка
+     * громкости. Собирается один раз — на паузе только меняются значения.
+     */
+    private Screen buildPauseScreen(int screenW, int screenH) {
+        Screen screen = new Screen(screenW, screenH);
+
+        PauseView view = new PauseView(screenW, screenH);
+        screen.addChild(view);
+
+        int sliderX = view.panelX() + 28;
+        int sliderW = view.panelWidth() - 56;
+        int sliderY = view.panelY() + 90;
+
+        screen.addChild(new ui.widgets.Slider(sliderX, sliderY, sliderW, 26,
+                "Музыка", music.getVolume(), v -> music.setVolume((float) v)));
+        screen.addChild(new ui.widgets.Slider(sliderX, sliderY + 46, sliderW, 26,
+                "Звуки", sfx_dig.getVolume(), v -> sfx_dig.setVolume((float) v)));
+
+        return screen;
     }
 
     public Player getPlayer() { return player; }
     public String getActivePrompt() { return activePrompt; }
     public String getOverlayMessage() { return overlayMessage; }
     public boolean isWon() { return won; }
+    public boolean isPaused() { return paused; }
 
     // --- тик ---
 
     @Override
     public void tick(double dt) {
+        // Esc обрабатываем до всего остального — иначе с паузы не выйти
+        if (input.wasPressed(KeyEvent.VK_ESCAPE)) paused = !paused;
+
+        if (paused) {
+            tickPauseScreen();
+            return;   // сам игровой мир на паузе не тикает вообще
+        }
+
         if (overlayTimer > 0) {
             overlayTimer -= dt;
             if (overlayTimer <= 0) overlayMessage = "";
@@ -132,6 +171,23 @@ public class Game implements Scene {
         }
 
         camera.follow(player);
+    }
+
+    /**
+     * Ввод для экрана паузы. Мышь в UI-дерево шлём отсюда, а не из GameWindow:
+     * окно крутит Game как Scene и про этот Screen ничего не знает.
+     */
+    private void tickPauseScreen() {
+        int mx = input.getMouseX();
+        int my = input.getMouseY();
+
+        if (input.wasLeftPressed()) {
+            pauseScreen.handleMousePressed(mx, my, java.awt.event.MouseEvent.BUTTON1);
+        } else if (input.wasLeftReleased()) {
+            pauseScreen.handleMouseReleased(mx, my, java.awt.event.MouseEvent.BUTTON1);
+        } else if (input.isLeftDown()) {
+            pauseScreen.handleMouseDragged(mx, my);   // тянем ползунок громкости
+        }
     }
 
     private void tickDynamites(double dt) {
@@ -283,6 +339,9 @@ public class Game implements Scene {
         drawDarkness(g, viewW, viewH);
 
         hud.draw(new DrawCtx(g, 0, 0));
+
+        // экран паузы — последним слоем, поверх мира и HUD
+        if (paused) pauseScreen.draw(new DrawCtx(g, 0, 0));
 
 
         frames++;
