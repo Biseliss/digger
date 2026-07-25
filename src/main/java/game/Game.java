@@ -54,6 +54,7 @@ public class Game implements Scene {
 
 
     public Audio music; // для звуков будет public Audio sounds; это по сути звуковые дорожки отдельные
+    public Audio sfx;
 
     public Game(Input input, int screenW, int screenH) {
         this.input = input;
@@ -72,8 +73,10 @@ public class Game implements Scene {
         this.hud = new Screen(screenW, screenH);
         hud.addChild(new HudView(this, screenW, screenH));
 
-        Audio music = new Audio();
-        music.setFile(0); // подгружает музыку из регистра, однако я потом сделаю поиск по названию файла а не индексу в списке, это временно.
+        music = new Audio();
+        sfx = new Audio();
+        
+        music.setFile("Soundtrack"); // подгружает музыку из регистра, однако я потом сделаю поиск по названию файла а не индексу в списке, это временно.
         music.loop(); // проигрывает и лупит её, есть функция play(), она играет без лупа один раз, подходит для отдельных звуков 
     }
 
@@ -147,6 +150,8 @@ public class Game implements Scene {
             OreType ore = broken.drop;
             if (!player.addOre(ore)) showMessage("Can't carry more " + ore.displayName, 1.5);
         }
+        sfx.setFile("SFX_Dig");
+        sfx.play();
     }
 
     private void handleInteractions() {

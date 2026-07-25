@@ -5,7 +5,7 @@ import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
+import java.util.HashMap;
 
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
@@ -15,17 +15,18 @@ public class Audio {
     Clip clip;
     // store file paths instead of InputStreams so we can open a fresh stream each
     // time
-    ArrayList<String> soundFiles = new ArrayList<>();
+    HashMap<String, String> soundFiles = new HashMap<>();
 
     public Audio() {
         try {
-            soundFiles.add(Paths.get(getClass().getResource("/sounds/soundtrack.wav").toURI()).toString());
+            soundFiles.put("Soundtrack", Paths.get(getClass().getResource("/sounds/soundtrack.wav").toURI()).toString());
+            soundFiles.put("SFX_Dig", Paths.get(getClass().getResource("/sounds/sfx_dig.wav").toURI()).toString());
         } catch (URISyntaxException e) {
             System.out.println("Path doesn't exist or is wrong");
         }
     }
 
-    public void setFile(int i) {
+    public void setFile(String key) {
         try {
             // close previous clip if open
             if (clip != null) {
@@ -42,7 +43,7 @@ public class Audio {
 
             // open a fresh buffered stream for each request so the stream is at the file
             // start
-            try (InputStream in = new BufferedInputStream(Files.newInputStream(Paths.get(soundFiles.get(i))));
+            try (InputStream in = new BufferedInputStream(Files.newInputStream(Paths.get(soundFiles.get(key))));
                     AudioInputStream ais = AudioSystem.getAudioInputStream(in)) {
 
                 clip = AudioSystem.getClip();
