@@ -24,6 +24,12 @@ public class Field {
     /** Отдаётся за границами мира, чтобы вызывающим не приходилось знать про null. */
     private final Block outOfBounds = new SolidBlock(-1, -1, BlockType.BEDROCK);
 
+    // Рабочие структуры волны видимости. Переиспользуются, чтобы не мусорить
+    // аллокациями каждый кадр.
+    private final java.util.ArrayDeque<Long> visitQueue = new java.util.ArrayDeque<>();
+    private final java.util.HashSet<Long> visited = new java.util.HashSet<>();
+    private static final int[][] NEIGHBOURS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+
     public Field() {
         int chunksY = (Constants.WORLD_H + Constants.CHUNK_H - 1) / Constants.CHUNK_H;
         for (int cx = 0; cx < Constants.WORLD_CHUNKS_X; cx++) {
@@ -99,45 +105,139 @@ public class Field {
         }
     }
 
-    /** Раскрыть всё в радиусе — то, что игрок реально видит в круге света. */
-    public void revealCircle(double centerX, double centerY, double radius) {
-        int r = (int) Math.ceil(radius);
+    /**
+     * Пересчёт видимости (п.7). Раньше тут был простой круг, и сквозь стену
+     * просвечивали пещеры, в которых игрок никогда не был.
+     *
+     * Теперь идём волной от игрока по проходимым тайлам (воздух, лестницы) в
+     * пределах радиуса: так «наша» полость раскрывается, а соседняя, отрезанная
+     * породой, — нет. Стенки раскрываются как соседи достигнутого воздуха,
+     * то есть блок видно ровно с той стороны, с которой к нему подошли.
+     *
+     * @param frame номер кадра — им помечаются блоки, видимые прямо сейчас
+     *              (нужно, чтобы нельзя было копать сквозь стену по старой памяти)
+     */
+    public void updateVisibility(double centerX, double centerY, double radius, int frame) {
         int cx = (int) Math.floor(centerX);
         int cy = (int) Math.floor(centerY);
-        for (int x = cx - r; x <= cx + r; x++) {
-            for (int y = cy - r; y <= cy + r; y++) {
-                double dx = x + 0.5 - centerX;
-                double dy = y + 0.5 - centerY;
-                if (dx * dx + dy * dy <= radius * radius) reveal(x, y);
+        double r2 = radius * radius;
+
+        // BFS по проходимым тайлам; область маленькая (радиус света), так что дёшево
+        visitQueue.clear();
+        visited.clear();
+
+        if (!inBounds(cx, cy)) return;
+        visitQueue.add(pack(cx, cy));
+        visited.add(pack(cx, cy));
+
+        while (!visitQueue.isEmpty()) {
+            long cur = visitQueue.poll();
+            int x = unpackX(cur);
+            int y = unpackY(cur);
+
+            // сам проходимый тайл тоже виден (фон, лестница)
+            markSeen(x, y, frame);
+
+            // стенки вокруг: их видно именно с этой стороны
+            for (int nx = x - 1; nx <= x + 1; nx++) {
+                for (int ny = y - 1; ny <= y + 1; ny++) {
+                    if (!inBounds(nx, ny)) continue;
+                    if (getBlock(nx, ny).isSolid()) markSeen(nx, ny, frame);
+                }
+            }
+
+            // дальше волна идёт только по пустоте и только в пределах радиуса
+            for (int[] d : NEIGHBOURS) {
+                int nx = x + d[0];
+                int ny = y + d[1];
+                if (!inBounds(nx, ny)) continue;
+
+                double ddx = nx + 0.5 - centerX;
+                double ddy = ny + 0.5 - centerY;
+                if (ddx * ddx + ddy * ddy > r2) continue;
+                if (getBlock(nx, ny).isSolid()) continue;
+
+                long key = pack(nx, ny);
+                if (visited.add(key)) visitQueue.add(key);
             }
         }
     }
 
-    /** Соседи по радиусу 1 вокруг раскопанного тайла (правило из п.7). */
-    public void revealNeighbours(int tx, int ty) {
-        for (int x = tx - 1; x <= tx + 1; x++) {
-            for (int y = ty - 1; y <= ty + 1; y++) {
-                reveal(x, y);
-            }
+    private void markSeen(int tx, int ty, int frame) {
+        Block b = getBlock(tx, ty);
+        b.markVisible(frame);
+        if (!b.isRevealed()) {
+            b.setRevealed(true);
+            Chunk c = chunkAt(tx, ty);
+            if (c != null) c.markDirty();
         }
+    }
+
+    /** Виден ли блок игроку прямо сейчас — по этому решается, можно ли копать. */
+    public boolean isVisibleNow(int tx, int ty, int frame) {
+        return inBounds(tx, ty) && getBlock(tx, ty).isVisibleNow(frame);
+    }
+
+    private static long pack(int x, int y) {
+        return ((long) x << 32) ^ (y & 0xFFFFFFFFL);
+    }
+
+    private static int unpackX(long key) {
+        return (int) (key >> 32);
+    }
+
+    private static int unpackY(long key) {
+        return (int) key;
     }
 
     // --- разрушение ---
 
     /**
      * Убирает блок и запускает всё, что за этим следует: задний план,
-     * туман войны, обвал гравия сверху и каскад лавы.
+     * обвал гравия сверху и каскад лавы.
+     *
+     * @return все реально разрушенные блоки — обычно один, но у лестницы
+     *         осыпается вся колонна, и вызывающему нужно вернуть игроку всё.
      */
-    public void breakBlock(int tx, int ty) {
+    public List<Block> breakBlock(int tx, int ty) {
         Block b = getBlock(tx, ty);
-        if (!inBounds(tx, ty) || b.isAir() || !b.getType().breakable) return;
+        if (!inBounds(tx, ty) || b.isAir() || !b.getType().breakable) return List.of();
 
-        setBackground(tx, ty, b.getType());   // на месте блока остаётся тёмный фон (п.11)
+        List<Block> broken = new ArrayList<>();
+        if (b.getType() == BlockType.LADDER) {
+            breakLadderColumn(tx, ty, broken);
+        } else {
+            broken.add(removeTile(tx, ty, true));
+        }
+        return broken;
+    }
+
+    /**
+     * Лестница держится всей колонной: выбили один блок — осыпается и то, что
+     * над ним, и то, что под ним (иначе в воздухе повисали бы обрывки).
+     */
+    private void breakLadderColumn(int tx, int ty, List<Block> out) {
+        int top = ty;
+        while (isLadder(tx, top - 1)) top--;
+        int bottom = ty;
+        while (isLadder(tx, bottom + 1)) bottom++;
+
+        for (int y = top; y <= bottom; y++) {
+            out.add(removeTile(tx, y, false));
+        }
+    }
+
+    /**
+     * @param leaveBackground оставить ли на месте блока тёмный фон (п.11).
+     *                        Лестница — не порода, после неё фону взяться неоткуда.
+     */
+    private Block removeTile(int tx, int ty, boolean leaveBackground) {
+        Block b = getBlock(tx, ty);
+        if (leaveBackground) setBackground(tx, ty, b.getType());
         setBlock(tx, ty, new AirBlock(tx, ty));
         b.onBreak(this);
-
-        revealNeighbours(tx, ty);
         onTileFreed(tx, ty);
+        return b;
     }
 
     /** Тайл освободился — проверяем, что там сверху: гравий падает, лава течёт. */
@@ -182,9 +282,18 @@ public class Field {
         return getBlock(tx, ty).getType() == BlockType.LADDER;
     }
 
-    /** Лестницу можно поставить в любую свободную клетку — она ни на что не опирается. */
+    /**
+     * Лестница должна на что-то опираться или к чему-то крепиться: ставим её
+     * либо ПОВЕРХ плотного блока (или другой лестницы), либо ПОД ним.
+     * Иначе колонны висели бы посреди пустоты.
+     */
     public boolean canPlaceLadder(int tx, int ty) {
-        return inBounds(tx, ty) && getBlock(tx, ty).isAir();
+        if (!inBounds(tx, ty) || !getBlock(tx, ty).isAir()) return false;
+        return hasLadderSupport(tx, ty + 1) || hasLadderSupport(tx, ty - 1);
+    }
+
+    private boolean hasLadderSupport(int tx, int ty) {
+        return isSolid(tx, ty) || isLadder(tx, ty);
     }
 
     public void placeLadder(int tx, int ty) {

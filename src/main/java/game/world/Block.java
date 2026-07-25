@@ -1,5 +1,7 @@
 package game.world;
 
+import game.item.OreType;
+
 /**
  * Один тайл мира.
  *
@@ -24,6 +26,17 @@ public abstract class Block {
     /** 0/90/180/270 — детерминированно по координатам, для разнообразия (п.11). */
     private final int rotation;
 
+    /**
+     * Руда в этом блоке (null — чистая порода). Именно «маска», а не свой
+     * BlockType: сама порода остаётся породой своего слоя, а текстура руды
+     * дорисовывается поверх — поэтому медь одинаково узнаваема и в камне,
+     * и в ядре.
+     */
+    private OreType ore;
+
+    /** Кадр, на котором блок последний раз был реально виден игроку (п.7). */
+    private int visibleStamp = -1;
+
     protected Block(int worldX, int worldY, BlockType type) {
         this.worldX = worldX;
         this.worldY = worldY;
@@ -40,6 +53,32 @@ public abstract class Block {
 
     public BlockType getType() {
         return type;
+    }
+
+    public OreType getOre() {
+        return ore;
+    }
+
+    public void setOre(OreType ore) {
+        this.ore = ore;
+        resetDurability();   // руда делает блок прочнее чистой породы
+    }
+
+    /** Что упадёт игроку: руда-маска важнее «родного» дропа породы. */
+    public OreType drop() {
+        return ore != null ? ore : type.drop;
+    }
+
+    /**
+     * Виден ли блок игроку прямо сейчас (а не «когда-то был раскрыт»).
+     * Копать разрешено только такие — иначе можно ковырять породу сквозь стену.
+     */
+    public boolean isVisibleNow(int frame) {
+        return visibleStamp == frame;
+    }
+
+    public void markVisible(int frame) {
+        visibleStamp = frame;
     }
 
     public int getRotation() {
@@ -67,7 +106,7 @@ public abstract class Block {
     }
 
     public void resetDurability() {
-        this.durability = type.durability;
+        this.durability = type.durability + (ore != null ? ore.extraDurability : 0);
     }
 
     /** Возвращает true, если блок «докопан» и его пора ломать. */

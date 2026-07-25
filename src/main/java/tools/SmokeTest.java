@@ -16,6 +16,7 @@ import game.world.*;
  */
 public class SmokeTest {
     static int failed = 0;
+    static int frame = 1;
     static void check(String name, boolean ok) {
         System.out.println((ok ? "  OK  " : " FAIL ") + name);
         if (!ok) failed++;
@@ -30,10 +31,13 @@ public class SmokeTest {
         for (int i = 0; i < 400 && p.depth() < 60; i++) {
             int tx = (int) p.centerTileX();
             int ty = (int) (p.centerTileY() + 1);
-            BlockType broken = null;
-            for (int k = 0; k < 200 && broken == null && f.isSolid(tx, ty); k++)
-                broken = p.dig(f, tx, ty, 1.0 / 60);
-            if (broken != null && broken.drop != null) p.addOre(broken.drop);
+            java.util.List<Block> broken = java.util.List.of();
+            for (int k = 0; k < 200 && broken.isEmpty() && f.isSolid(tx, ty); k++) {
+                frame++;
+                f.updateVisibility(p.centerTileX(), p.centerTileY(), 12, frame);
+                broken = p.dig(f, tx, ty, 1.0 / 60, frame);
+            }
+            for (Block b : broken) if (b.drop() != null) p.addOre(b.drop());
             for (int k = 0; k < 30; k++) p.tick(1.0 / 60, f, false, false, false, false);
         }
         check("докопался ниже 60 тайлов (глубина " + p.depth() + ")", p.depth() >= 60);
@@ -64,9 +68,13 @@ public class SmokeTest {
         int deepX = Constants.WORLD_W / 2;
         while (!f.isSolid(deepX, deepY)) deepY++;
         rookie.teleportToTile(deepX, deepY - 1);
-        BlockType r = null;
-        for (int k = 0; k < 500; k++) r = rookie.dig(f, deepX, deepY, 1.0 / 60);
-        check("deepslate не копается деревянной киркой", f.isSolid(deepX, deepY) && r == null);
+        java.util.List<Block> r = java.util.List.of();
+        for (int k = 0; k < 500; k++) {
+            frame++;
+            f.updateVisibility(rookie.centerTileX(), rookie.centerTileY(), 12, frame);
+            r = rookie.dig(f, deepX, deepY, 1.0 / 60, frame);
+        }
+        check("deepslate не копается деревянной киркой", f.isSolid(deepX, deepY) && r.isEmpty());
 
         // 6. обвал гравия: гравий, под ним опора, ниже пустота и дно
         int gx = 5, gy = Constants.SURFACE_Y + 50;
@@ -127,7 +135,7 @@ public class SmokeTest {
         int floorY = Constants.SURFACE_Y + 40;
         for (int y = floorY - 12; y < floorY; y++) f.setBlock(cx, y, new AirBlock(cx, y));
         f.setBlock(cx, floorY, new SolidBlock(cx, floorY, BlockType.STONE));
-        for (int y = floorY - 10; y < floorY; y++) f.placeLadder(cx, y);
+        for (int y = floorY - 1; y >= floorY - 10; y--) f.placeLadder(cx, y);
         check("лестница не solid — сквозь неё можно ходить", !f.isSolid(cx, floorY - 5));
 
         climber.teleportToTile(cx, floorY - 5);
@@ -149,12 +157,18 @@ public class SmokeTest {
         Player miner = new Player(cx + 1, floorY - 2);
         miner.addUtility(UtilityType.LADDER, 1);
         int had = miner.getUtility(UtilityType.LADDER);
-        BlockType brokenLadder = null;
-        for (int k = 0; k < 200 && brokenLadder == null; k++)
-            brokenLadder = miner.dig(f, cx, floorY - 2, 1.0 / 60);
-        if (brokenLadder == BlockType.LADDER) miner.addUtility(UtilityType.LADDER);
-        check("лестница ломается и возвращается в инвентарь",
-                brokenLadder == BlockType.LADDER && miner.getUtility(UtilityType.LADDER) == had + 1);
+        java.util.List<Block> brokenLadders = java.util.List.of();
+        for (int k = 0; k < 200 && brokenLadders.isEmpty(); k++) {
+            frame++;
+            f.updateVisibility(miner.centerTileX(), miner.centerTileY(), 12, frame);
+            brokenLadders = miner.dig(f, cx, floorY - 2, 1.0 / 60, frame);
+        }
+        for (Block b : brokenLadders) miner.addUtility(UtilityType.LADDER);
+        check("лестница ломается и вся колонна возвращается в инвентарь ("
+                        + brokenLadders.size() + " шт)",
+                brokenLadders.size() > 1
+                        && brokenLadders.stream().allMatch(b -> b.getType() == BlockType.LADDER)
+                        && miner.getUtility(UtilityType.LADDER) == had + brokenLadders.size());
 
         System.out.println(failed == 0 ? "\nВСЕ ПРОВЕРКИ ПРОШЛИ" : "\nПРОВАЛЕНО: " + failed);
         System.exit(failed == 0 ? 0 : 1);

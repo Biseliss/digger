@@ -1,6 +1,7 @@
 package game.world;
 
 import game.Constants;
+import game.item.OreType;
 
 import java.util.Random;
 
@@ -17,6 +18,8 @@ public class WorldGenerator {
     private final Noise noise;
 
     private final BlockType[][] tiles = new BlockType[Constants.WORLD_W][Constants.WORLD_H];
+    /** Маска руды поверх породы — параллельно tiles, null значит чистый камень. */
+    private final OreType[][] ores = new OreType[Constants.WORLD_W][Constants.WORLD_H];
 
     public WorldGenerator(long seed) {
         this.seed = seed;
@@ -195,14 +198,14 @@ public class WorldGenerator {
     // --- 4. Руда (самый последний шаг, п.5) ---
 
     /** Руда, её родной слой и базовый шанс. Чем глубже своего слоя — тем реже. */
-    private record OreSpawn(BlockType type, int nativeLayer, double baseChance) {}
+    private record OreSpawn(OreType type, int nativeLayer, double baseChance) {}
 
     private static final OreSpawn[] ORES = {
-            new OreSpawn(BlockType.COAL_ORE, 1, 0.055),
-            new OreSpawn(BlockType.COPPER_ORE, 1, 0.040),
-            new OreSpawn(BlockType.IRON_ORE, 2, 0.035),
-            new OreSpawn(BlockType.GOLD_ORE, 2, 0.020),
-            new OreSpawn(BlockType.DIAMOND_ORE, 3, 0.014),
+            new OreSpawn(OreType.COAL, 1, 0.055),
+            new OreSpawn(OreType.COPPER, 1, 0.040),
+            new OreSpawn(OreType.IRON, 2, 0.035),
+            new OreSpawn(OreType.GOLD, 2, 0.020),
+            new OreSpawn(OreType.DIAMOND, 3, 0.014),
     };
 
     private void generateOres() {
@@ -210,6 +213,7 @@ public class WorldGenerator {
             for (int y = Constants.SURFACE_Y; y < Constants.WORLD_H - 2; y++) {
                 if (!isDense(x, y)) continue;                  // только плотная порода, не лава/гравий/воздух
                 if (tiles[x][y] == BlockType.GRAVEL) continue;
+                if (ores[x][y] != null) continue;              // уже занято другой рудой
 
                 int layerIndex = Layer.atWorldY(y).index();
                 for (OreSpawn ore : ORES) {
@@ -226,13 +230,13 @@ public class WorldGenerator {
     }
 
     /** Руда идёт кучками, а не одиночными пикселями — так её приятнее копать. */
-    private void placeOreBlob(int x, int y, BlockType ore) {
+    private void placeOreBlob(int x, int y, OreType ore) {
         int size = 2 + rnd.nextInt(4);
         int px = x;
         int py = y;
         for (int i = 0; i < size; i++) {
             if (!isDense(px, py) || tiles[px][py] == BlockType.GRAVEL) break;
-            tiles[px][py] = ore;
+            ores[px][py] = ore;   // порода остаётся своей, руда ложится маской
             px += rnd.nextInt(3) - 1;
             py += rnd.nextInt(3) - 1;
             if (!Field.inBounds(px, py)) break;
@@ -261,7 +265,9 @@ public class WorldGenerator {
     private void writeToField(Field field) {
         for (int x = 0; x < Constants.WORLD_W; x++) {
             for (int y = 0; y < Constants.WORLD_H; y++) {
-                field.setBlock(x, y, create(x, y, tiles[x][y]));
+                Block block = create(x, y, tiles[x][y]);
+                if (ores[x][y] != null) block.setOre(ores[x][y]);
+                field.setBlock(x, y, block);
 
                 // Природным пустотам тоже даём задний план породы своего слоя.
                 // ТЗ описывает фон только для раскопанных игроком тайлов, но без

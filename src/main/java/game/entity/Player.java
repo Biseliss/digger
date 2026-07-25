@@ -12,6 +12,7 @@ import game.world.Layer;
 
 import java.awt.Graphics2D;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -138,16 +139,17 @@ public class Player {
         applyEnvironmentDamage(dt, field);
     }
 
-    /** Лестница «ловит» игрока, если он её касается хитбоксом — как в Minecraft. */
+    /**
+     * Лестница «ловит» игрока только НИЖНЕЙ его половиной (игрок высотой в два
+     * тайла). Если проверять весь хитбокс, работает эксплойт «лестница — дыра —
+     * лестница»: ноги висят в пустоте, а зацепка идёт головой за верхний блок.
+     */
     private boolean isTouchingLadder(Field field) {
         int minTx = (int) Math.floor(x / Constants.TILE);
         int maxTx = (int) Math.floor((x + Constants.HITBOX_W - 0.01) / Constants.TILE);
-        int minTy = (int) Math.floor(y / Constants.TILE);
-        int maxTy = (int) Math.floor((y + Constants.HITBOX_H - 0.01) / Constants.TILE);
+        int feetTy = (int) Math.floor((y + Constants.HITBOX_H - 0.01) / Constants.TILE);
         for (int tx = minTx; tx <= maxTx; tx++) {
-            for (int ty = minTy; ty <= maxTy; ty++) {
-                if (field.isLadder(tx, ty)) return true;
-            }
+            if (field.isLadder(tx, feetTy)) return true;
         }
         return false;
     }
@@ -294,23 +296,30 @@ public class Player {
     // --- копание (п.2: курсор + ЛКМ в радиусе досягаемости) ---
 
     /**
-     * @return тип разрушенного блока (руду/лестницу из него достаёт вызывающий),
-     *         или null, если блок ещё не докопан.
+     * @param frame текущий кадр — нужен, чтобы копать можно было только то,
+     *              что видно прямо сейчас (не сквозь стену по старой памяти)
+     * @return разрушенные блоки (у лестницы — вся колонна), пусто — если блок
+     *         ещё не докопан или копать его нельзя
      */
-    public BlockType dig(Field field, int tx, int ty, double dt) {
+    public List<Block> dig(Field field, int tx, int ty, double dt, int frame) {
         if (distanceToTile(tx + 0.5, ty + 0.5) > Constants.DIG_REACH) {
             resetDigTarget(field);
-            return null;
+            return List.of();
+        }
+        // правило из п.7: не видишь блок — не копаешь
+        if (!field.isVisibleNow(tx, ty, frame)) {
+            resetDigTarget(field);
+            return List.of();
         }
 
         Block block = field.getBlock(tx, ty);
         if (block.isAir() || !block.getType().breakable) {
             resetDigTarget(field);
-            return null;
+            return List.of();
         }
         if (tool.getLevel() < block.requiredToolTier()) {
             resetDigTarget(field);
-            return null;
+            return List.of();
         }
 
         if (tx != digTargetX || ty != digTargetY) {
@@ -321,13 +330,12 @@ public class Player {
 
         int power = (int) Math.max(1, Math.round(tool.getDigSpeed() * 60 * dt));
         if (block.applyDigDamage(power)) {
-            BlockType type = block.getType();
-            field.breakBlock(tx, ty);
+            List<Block> broken = field.breakBlock(tx, ty);
             digTargetX = Integer.MIN_VALUE;
             digTargetY = Integer.MIN_VALUE;
-            return type;
+            return broken;
         }
-        return null;
+        return List.of();
     }
 
     /** Отпустили кнопку или увели курсор — недокопанный блок «залечивается». */

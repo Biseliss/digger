@@ -99,7 +99,7 @@ public final class Benchmark {
             place(p, WARMUP + i, true);
 
             long a = System.nanoTime();
-            field.revealCircle(p.centerTileX(), p.centerTileY(), p.lightRadius() + 1);
+            field.updateVisibility(p.centerTileX(), p.centerTileY(), p.lightRadius() + 1, i);
             revealNs += System.nanoTime() - a;
 
             Graphics2D g = target.createGraphics();
@@ -121,7 +121,7 @@ public final class Benchmark {
             g.dispose();
         }
 
-        System.out.printf("  revealCircle:  %.2f мс/кадр%n", revealNs / 1_000_000.0 / FRAMES);
+        System.out.printf("  видимость:     %.2f мс/кадр%n", revealNs / 1_000_000.0 / FRAMES);
         System.out.printf("  field.draw:    %.2f мс/кадр%n", worldNs / 1_000_000.0 / FRAMES);
         System.out.printf("  освещение:     %.2f мс/кадр%n", lightNs / 1_000_000.0 / FRAMES);
         System.out.printf("  полный кадр:   %.2f мс/кадр%n", hudNs / 1_000_000.0 / FRAMES);

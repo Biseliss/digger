@@ -10,19 +10,15 @@ import game.item.OreType;
 public enum BlockType {
     AIR("air", false, 0, null, false),
 
-    // Базовая порода слоёв
+    // Базовая порода слоёв. Руда — не отдельный тип блока, а «маска» поверх
+    // породы (Block.ore): иначе медь, найденная в ядре, выглядела бы куском
+    // камня — текстура-то от родного слоя. Так порода всегда своя, а руда
+    // просто дорисовывается сверху.
     DIRT("block_dirt", true, 8, null, true),
     STONE("block_stone", true, 18, OreType.STONE, true),
     DEEPSLATE("block_deepslate", true, 32, null, true),
     HOT_ROCK("block_hotrock", true, 48, null, true),
     CORE_ROCK("block_core", true, 70, null, true),
-
-    // Руды
-    COAL_ORE("ore_coal", true, 20, OreType.COAL, true),
-    COPPER_ORE("ore_copper", true, 24, OreType.COPPER, true),
-    IRON_ORE("ore_iron", true, 36, OreType.IRON, true),
-    GOLD_ORE("ore_gold", true, 40, OreType.GOLD, true),
-    DIAMOND_ORE("ore_diamond", true, 60, OreType.DIAMOND, true),
 
     // Особые
     GRAVEL("block_gravel", true, 10, null, true),

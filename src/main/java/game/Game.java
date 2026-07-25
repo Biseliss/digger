@@ -1,14 +1,5 @@
 package game;
 
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.event.KeyEvent;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-
-import core.Audio;
 import core.Input;
 import core.Scene;
 import game.entity.Dynamite;
@@ -22,11 +13,20 @@ import game.npc.ToolsmithNpc;
 import game.npc.UtilityShopNpc;
 import game.render.Lighting;
 import game.render.Textures;
+import game.world.Block;
 import game.world.BlockType;
 import game.world.Field;
 import game.world.WorldGenerator;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import ui.DrawCtx;
 import ui.Screen;
+
 
 /** Склейка всего: мир, игрок, NPC, свет и HUD под одним tick/draw. */
 public class Game implements Scene {
@@ -48,12 +48,12 @@ public class Game implements Scene {
     private double overlayTimer;
     private boolean won;
 
+    /** Счётчик кадров для отметки «блок виден прямо сейчас» (п.7). */
+    private int visibilityFrame;
+
     private int fps = 0;
     private int frames = 0;
     private long lastTime = System.currentTimeMillis();
-
-
-    public Audio music; // для звуков будет public Audio sounds; это по сути звуковые дорожки отдельные
 
     public Game(Input input, int screenW, int screenH) {
         this.input = input;
@@ -71,10 +71,6 @@ public class Game implements Scene {
 
         this.hud = new Screen(screenW, screenH);
         hud.addChild(new HudView(this, screenW, screenH));
-
-        Audio music = new Audio();
-        music.setFile(0); // подгружает музыку из регистра, однако я потом сделаю поиск по названию файла а не индексу в списке, это временно.
-        music.loop(); // проигрывает и лупит её, есть функция play(), она играет без лупа один раз, подходит для отдельных звуков 
     }
 
     public Player getPlayer() { return player; }
@@ -106,12 +102,15 @@ public class Game implements Scene {
         field.tick(dt, player);
         tickDynamites(dt);
 
+        // Видимость считаем ДО копания: копать можно только то, что видно
+        // сейчас, а волна должна учитывать уже случившиеся за кадр изменения.
+        visibilityFrame++;
+        field.updateVisibility(player.centerTileX(), player.centerTileY(),
+                player.lightRadius() + 1, visibilityFrame);
+
         handleDigging(dt);
         handleInteractions();
         checkWin();
-
-        // туман войны: раскрываем то, что игрок реально видит в круге света (п.7)
-        field.revealCircle(player.centerTileX(), player.centerTileY(), player.lightRadius() + 1);
 
         if (player.isDead()) {
             respawn("You died: " + player.getLastDeathReason());
@@ -124,7 +123,7 @@ public class Game implements Scene {
         for (Iterator<Dynamite> it = dynamites.iterator(); it.hasNext(); ) {
             Dynamite d = it.next();
             d.tick(dt, field, player);
-            if (d.isExploded()) it.remove();
+            if (d.isFinished()) it.remove();   // ждём, пока доиграет вспышка
         }
     }
 
@@ -137,15 +136,17 @@ public class Game implements Scene {
         int tx = camera.screenToTileX(input.getMouseX());
         int ty = camera.screenToTileY(input.getMouseY());
 
-        BlockType broken = player.dig(field, tx, ty, dt);
-        if (broken == null) return;
-
-        if (broken == BlockType.LADDER) {
-            // снятая лестница возвращается в инвентарь, как в Minecraft
-            if (!player.addUtility(UtilityType.LADDER)) showMessage("Ladder stack is full", 1.5);
-        } else if (broken.drop != null) {
-            OreType ore = broken.drop;
-            if (!player.addOre(ore)) showMessage("Can't carry more " + ore.displayName, 1.5);
+        // у лестницы за раз осыпается вся колонна, поэтому список
+        for (Block broken : player.dig(field, tx, ty, dt, visibilityFrame)) {
+            if (broken.getType() == BlockType.LADDER) {
+                // снятая лестница возвращается в инвентарь, как в Minecraft
+                if (!player.addUtility(UtilityType.LADDER)) showMessage("Ladder stack is full", 1.5);
+                continue;
+            }
+            OreType ore = broken.drop();
+            if (ore != null && !player.addOre(ore)) {
+                showMessage("Can't carry more " + ore.displayName, 1.5);
+            }
         }
     }
 

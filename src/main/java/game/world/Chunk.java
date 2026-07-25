@@ -137,6 +137,12 @@ public class Chunk {
                         int rot = b.getType().isRotatable() ? b.getRotation() : 0;
                         g.drawImage(Textures.get(b.getType().texture, rot),
                                 dx, dy, Constants.TILE, Constants.TILE, null);
+
+                        // руда — прозрачный оверлей поверх породы своего слоя
+                        if (b.getOre() != null) {
+                            g.drawImage(Textures.get(b.getOre().overlay, rot),
+                                    dx, dy, Constants.TILE, Constants.TILE, null);
+                        }
                     }
 
                     int shade = depthShade(b.worldY);
