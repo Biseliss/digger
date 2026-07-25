@@ -27,10 +27,10 @@ public final class Constants {
     public static final int SURFACE_Y = 24;                           // уровень поверхности (выше — небо и база)
 
     // Глубины границ слоёв, в тайлах от поверхности (п.4)
-    public static final int LAYER_1_END = 40;
-    public static final int LAYER_2_END = 90;
-    public static final int LAYER_3_END = 150;
-    public static final int LAYER_4_END = 220;
+    public static final int LAYER_1_END = 20;
+    public static final int LAYER_2_END = 45;
+    public static final int LAYER_3_END = 75;
+    public static final int LAYER_4_END = 110;
     public static final int CORE_ROOM_H = 20;                         // финальная комната с дверью
     public static final int WORLD_H = SURFACE_Y + LAYER_4_END + CORE_ROOM_H + 4;
 
