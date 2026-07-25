@@ -28,7 +28,10 @@ public class SmokeTest {
 
         // 1. копание вниз от поверхности
         Player p = new Player(Constants.WORLD_W / 2, Constants.SURFACE_Y - 2);
-        for (int i = 0; i < 400 && p.depth() < 60; i++) {
+        // цель — не жёсткое число, а глубина, докуда достаёт СТАРТОВАЯ кирка:
+        // ниже слоя 2 нужен уже медный тир, а границы слоёв ещё и волнистые
+        int digTarget = Constants.LAYER_2_END - Constants.LAYER_BOUNDARY_WAVE - 4;
+        for (int i = 0; i < 400 && p.depth() < digTarget; i++) {
             int tx = (int) p.centerTileX();
             int ty = (int) (p.centerTileY() + 1);
             java.util.List<Block> broken = java.util.List.of();
@@ -40,7 +43,8 @@ public class SmokeTest {
             for (Block b : broken) if (b.drop() != null) p.addOre(b.drop());
             for (int k = 0; k < 30; k++) p.tick(1.0 / 60, f, false, false, false, false);
         }
-        check("докопался ниже 60 тайлов (глубина " + p.depth() + ")", p.depth() >= 60);
+        check("докопался деревянной киркой до " + digTarget + " тайлов (глубина " + p.depth() + ")",
+                p.depth() >= digTarget);
         check("собрал руду по пути (" + p.getCarriedOre() + ")", !p.getCarriedOre().isEmpty());
 
         // 2. лимит переноса на тип
