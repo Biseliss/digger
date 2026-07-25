@@ -1,8 +1,16 @@
 package game;
 
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
+import core.Audio;
 import core.Input;
 import core.Scene;
-import core.Audio;
 import game.entity.Dynamite;
 import game.entity.Player;
 import game.hud.HudView;
@@ -18,13 +26,6 @@ import game.world.Block;
 import game.world.BlockType;
 import game.world.Field;
 import game.world.WorldGenerator;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.event.KeyEvent;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
 import ui.DrawCtx;
 import ui.Screen;
 
