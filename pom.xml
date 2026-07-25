@@ -17,8 +17,17 @@
 
     <build>
         <finalName>${project.artifactId}</finalName>
+
+        <!--
+            Просто `mvn` = собрать и запустить игру.
+            Нужно потому, что `exec:java` — самостоятельная цель: сама она
+            ничего не компилирует, и после `mvn clean` (или на свежем клоне,
+            где target/ в .gitignore) падает с ClassNotFoundException.
+        -->
+        <defaultGoal>compile exec:java</defaultGoal>
+
         <plugins>
-            <!-- mvn exec:java -->
+            <!-- mvn compile exec:java -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
