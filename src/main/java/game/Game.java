@@ -111,6 +111,7 @@ public class Game implements Scene {
     public Audio sfx_dig;
     public Audio sfx_step;
     public Audio sfx_cash;
+    public Audio sfx_hurt;
     private final Audio[] sfxDigVoices = new Audio[DIG_VOICES];
     private int digVoiceIndex;
 
@@ -150,6 +151,10 @@ public class Game implements Scene {
         sfx_cash = new Audio();
         sfx_cash.setFile("SFX_Cash");
 
+        sfx_hurt = new Audio();
+        sfx_hurt.setFile("SFX_Hurt");
+        player.setOnDamage(sfx_hurt::play);   // звук ровно на реальном событии урона, не по опросу HP
+
         music.setFile("Soundtrack"); // подгружает музыку из регистра, однако я потом сделаю поиск по названию файла а не индексу в списке, это временно.
         music.loop(); // проигрывает и лупит её, есть функция play(), она играет без лупа один раз, подходит для отдельных звуков
 
@@ -158,6 +163,7 @@ public class Game implements Scene {
         for (Audio voice : sfxDigVoices) voice.setVolume(AppSettings.sfxVolume);
         sfx_step.setVolume(AppSettings.sfxVolume);
         sfx_cash.setVolume(AppSettings.sfxVolume);
+        sfx_hurt.setVolume(AppSettings.sfxVolume);
 
         // строго после аудио: ползунки читают стартовую громкость из Audio
         this.pauseScreen = buildPauseScreen(screenW, screenH);
@@ -188,6 +194,7 @@ public class Game implements Scene {
             for (Audio voice : sfxDigVoices) voice.setVolume((float) v);
             sfx_step.setVolume((float) v);
             sfx_cash.setVolume((float) v);
+            sfx_hurt.setVolume((float) v);
             AppSettings.sfxVolume = (float) v;
         }));
 

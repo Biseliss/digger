@@ -382,6 +382,13 @@ public class Player {
         return godMode;
     }
 
+    /** Игра вешает сюда звук урона — вызывается ровно на реальном событии, а не подглядыванием за HP. */
+    private Runnable onDamage;
+
+    public void setOnDamage(Runnable onDamage) {
+        this.onDamage = onDamage;
+    }
+
     public void damage(int amount, String reason) {
         if (godMode) return;
         if (amount <= 0) return;
@@ -390,6 +397,7 @@ public class Player {
             health = 0;
             lastDeathReason = reason;
         }
+        if (onDamage != null) onDamage.run();
     }
 
     public boolean isDead() {

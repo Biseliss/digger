@@ -98,6 +98,7 @@ public class Audio {
         soundFiles.put("SFX_Dig", "/sounds/sfx_dig.wav");
         soundFiles.put("SFX_Step", "/sounds/step.wav");
         soundFiles.put("SFX_Cash", "/sounds/cash.wav");
+        soundFiles.put("SFX_Hurt", "/sounds/hurt.wav");
     }
 
     public void setFile(String key) {
