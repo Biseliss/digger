@@ -51,7 +51,14 @@ public class Audio {
     private final HashMap<String, String> soundFiles = new HashMap<>();
 
     /** Распакованный звук целиком — файлы маленькие, читать с диска каждый раз незачем. */
-    private byte[] pcm;
+    private byte[] basePcm;
+
+    /**
+     * Буфер, который реально гоняется в линию. Обычно совпадает с basePcm;
+     * при воспроизведении с изменённым питчем — его resample-копия (см.
+     * {@link #play(float)}), пересобираемая под каждый вызов.
+     */
+    private byte[] active;
 
     private volatile boolean playing;
     private volatile boolean looping;
@@ -65,6 +72,7 @@ public class Audio {
     public Audio() {
         soundFiles.put("Soundtrack", "/sounds/soundtrack.wav");
         soundFiles.put("SFX_Dig", "/sounds/sfx_dig.wav");
+        soundFiles.put("SFX_Step", "/sounds/step.wav");
     }
 
     public void setFile(String key) {
@@ -77,7 +85,7 @@ public class Audio {
             }
             try (AudioInputStream raw = AudioSystem.getAudioInputStream(url);
                  AudioInputStream converted = AudioSystem.getAudioInputStream(TARGET, raw)) {
-                pcm = converted.readAllBytes();
+                basePcm = converted.readAllBytes();
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -86,16 +94,31 @@ public class Audio {
 
     /** Проиграть один раз. Пока звук ещё звучит, повторный вызов игнорируется. */
     public void play() {
-        start(false);
+        start(false, 1f);
+    }
+
+    /**
+     * Проиграть один раз с изменённым питчем (1 — как есть, {@literal <}1 —
+     * ниже и медленнее, {@literal >}1 — выше и быстрее).
+     *
+     * Питч меняется через resample «на лету» (шаг чтения сэмплов не 1, а
+     * pitch): честного pitch-shift без изменения длительности тут нет, но
+     * для короткого одноразового звука вроде шага разница неслышна, а
+     * реализация не тянет за собой отдельную DSP-библиотеку.
+     */
+    public void play(float pitch) {
+        start(false, pitch);
     }
 
     /** Проиграть зациклённо (музыка). */
     public void loop() {
-        start(true);
+        start(true, 1f);
     }
 
-    private void start(boolean loopForever) {
-        if (pcm == null || playing) return;
+    private void start(boolean loopForever, float pitch) {
+        if (basePcm == null || playing) return;
+
+        active = (pitch == 1f) ? basePcm : resample(basePcm, pitch);
 
         looping = loopForever;
         stopRequested = false;
@@ -104,6 +127,20 @@ public class Audio {
         playbackThread = new Thread(this::pump, "audio");
         playbackThread.setDaemon(true);   // не держим JVM при выходе из игры
         playbackThread.start();
+    }
+
+    /** Нехитрый resample по ближайшему сэмплу — меняет и питч, и длительность разом. */
+    private byte[] resample(byte[] src, float pitch) {
+        int frame = TARGET.getFrameSize();
+        int srcFrames = src.length / frame;
+        int dstFrames = Math.max(1, (int) (srcFrames / pitch));
+        byte[] dst = new byte[dstFrames * frame];
+
+        for (int i = 0; i < dstFrames; i++) {
+            int srcFrame = Math.min(srcFrames - 1, (int) (i * pitch));
+            System.arraycopy(src, srcFrame * frame, dst, i * frame, frame);
+        }
+        return dst;
     }
 
     public void stop() {
@@ -136,12 +173,12 @@ public class Audio {
             int pos = 0;
 
             while (!stopRequested) {
-                if (pos >= pcm.length) {
+                if (pos >= active.length) {
                     if (!looping) break;
                     // начало трека уже прозвучало внутри кроссфейда — не повторяем его
                     pos = crossfade;
                 }
-                int len = Math.min(chunkBytes, pcm.length - pos);
+                int len = Math.min(chunkBytes, active.length - pos);
                 fillChunk(chunk, len, pos, crossfade);
                 line.write(chunk, 0, len);
                 pos += len;
@@ -161,12 +198,12 @@ public class Audio {
 
     /** Длина зоны наложения в байтах, выровненная по фрейму. */
     private int crossfadeBytes() {
-        if (pcm == null) return 0;
+        if (active == null) return 0;
         int frame = TARGET.getFrameSize();
         int bytes = (int) (frame * TARGET.getFrameRate() * LOOP_CROSSFADE_SECONDS);
         bytes -= bytes % frame;
         // на очень коротких звуках наложение бессмысленно
-        return Math.min(bytes, pcm.length / 4);
+        return Math.min(bytes, active.length / 4);
     }
 
     /**
@@ -179,7 +216,7 @@ public class Audio {
     private void fillChunk(byte[] dst, int len, int pos, int crossfade) {
         float target = amplitude();
         int samples = len / 2;
-        int tailStart = pcm.length - crossfade;
+        int tailStart = active.length - crossfade;
 
         for (int i = 0; i < samples; i++) {
             float mix = appliedAmplitude + (target - appliedAmplitude) * (i / (float) samples);
@@ -206,8 +243,8 @@ public class Audio {
 
     /** 16-битный сэмпл little-endian по байтовому смещению. */
     private int readSample(int index) {
-        if (index < 0 || index + 1 >= pcm.length) return 0;
-        return (pcm[index + 1] << 8) | (pcm[index] & 0xFF);
+        if (index < 0 || index + 1 >= active.length) return 0;
+        return (active[index + 1] << 8) | (active[index] & 0xFF);
     }
 
     /** Положение ползунка -> амплитуда по перцептивной кривой. */

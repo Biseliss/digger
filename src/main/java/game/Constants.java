@@ -112,4 +112,9 @@ public final class Constants {
     public static final double SCREEN_SHAKE_AMPLITUDE = 5;            // px на полной силе
     public static final double DIG_SOUND_COOLDOWN = 0.12;             // сек между звуками поломки
     public static final int BREAK_STAGES = 4;                         // кадров трещин в textures/break
+
+    // --- Звук шагов ---
+    public static final double STEP_DISTANCE = 12;                    // px пройдено между шагами
+    public static final float STEP_PITCH_MIN = 0.9f;                  // разброс питча — чтобы шаги не звучали монотонно
+    public static final float STEP_PITCH_MAX = 1.1f;
 }

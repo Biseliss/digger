@@ -74,7 +74,8 @@ public class Game implements Scene {
 
 
     public Audio music;
-    public Audio sfx_dig; 
+    public Audio sfx_dig;
+    public Audio sfx_step;
 
     public Game(Input input, int screenW, int screenH) {
         this.input = input;
@@ -98,6 +99,8 @@ public class Game implements Scene {
         sfx_dig = new Audio();
         sfx_dig.setFile("SFX_Dig");
 
+        sfx_step = new Audio();
+        sfx_step.setFile("SFX_Step");
 
         music.setFile("Soundtrack"); // подгружает музыку из регистра, однако я потом сделаю поиск по названию файла а не индексу в списке, это временно.
         music.loop(); // проигрывает и лупит её, есть функция play(), она играет без лупа один раз, подходит для отдельных звуков
@@ -123,7 +126,10 @@ public class Game implements Scene {
         screen.addChild(new ui.widgets.Slider(sliderX, sliderY, sliderW, 26,
                 "Музыка", music.getVolume(), v -> music.setVolume((float) v)));
         screen.addChild(new ui.widgets.Slider(sliderX, sliderY + 46, sliderW, 26,
-                "Звуки", sfx_dig.getVolume(), v -> sfx_dig.setVolume((float) v)));
+                "Звуки", sfx_dig.getVolume(), v -> {
+            sfx_dig.setVolume((float) v);
+            sfx_step.setVolume((float) v);
+        }));
 
         return screen;
     }
@@ -163,6 +169,7 @@ public class Game implements Scene {
         boolean down = input.isAnyDown(KeyEvent.VK_S, KeyEvent.VK_DOWN);
 
         player.tick(dt, field, left, right, up, down);
+        if (player.consumeStep()) playStepSound();
         field.tick(dt, player);
         tickDynamites(dt);
         tickEffects(dt);
@@ -266,6 +273,13 @@ public class Game implements Scene {
         if (digSoundCooldown > 0) return;
         digSoundCooldown = Constants.DIG_SOUND_COOLDOWN;
         sfx_dig.play();
+    }
+
+    /** Питч слегка гуляет от шага к шагу — иначе ходьба звучит как метроном. */
+    private void playStepSound() {
+        float pitch = (float) (Constants.STEP_PITCH_MIN
+                + Math.random() * (Constants.STEP_PITCH_MAX - Constants.STEP_PITCH_MIN));
+        sfx_step.play(pitch);
     }
 
     private void handleInteractions() {

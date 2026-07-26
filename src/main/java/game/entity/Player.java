@@ -41,6 +41,10 @@ public class Player {
     private double lavaTimer;
     private double pressureTimer;
 
+    /** Пройденное по земле расстояние с прошлого шага — звук идёт не по времени, а по факту ходьбы. */
+    private double stepDistance;
+    private boolean stepPending;
+
     /** Прогресс копания привязан к конкретному тайлу: сменили цель — прогресс сброшен. */
     private int digTargetX = Integer.MIN_VALUE;
     private int digTargetY = Integer.MIN_VALUE;
@@ -136,7 +140,32 @@ public class Player {
         if (!onGround && wasOnGround) fallStartY = y;   // только что оторвались от земли
         if (!onGround && vy > 0 && y < fallStartY) fallStartY = y;
 
+        updateSteps(dt);
         applyEnvironmentDamage(dt, field);
+    }
+
+    /**
+     * Шаг — это не тик, а факт «прошли ещё STEP_DISTANCE пикселей по земле».
+     * vx тут уже после moveAxis: если движение упёрлось в стену, оно обнулено,
+     * и мы не считаем шаг, хотя кнопка всё ещё зажата.
+     */
+    private void updateSteps(double dt) {
+        if (onGround && !onLadder && vx != 0) {
+            stepDistance += Math.abs(vx) * dt;
+            if (stepDistance >= Constants.STEP_DISTANCE) {
+                stepDistance -= Constants.STEP_DISTANCE;
+                stepPending = true;
+            }
+        } else {
+            stepDistance = 0;
+        }
+    }
+
+    /** @return true один раз на каждый случившийся шаг — вызывающий сам решает, что с этим делать (звук). */
+    public boolean consumeStep() {
+        if (!stepPending) return false;
+        stepPending = false;
+        return true;
     }
 
     /**
