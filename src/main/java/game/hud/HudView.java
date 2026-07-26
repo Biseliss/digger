@@ -11,6 +11,8 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.util.ArrayList;
+import java.util.List;
 import ui.DrawCtx;
 import ui.UIObject;
 
@@ -160,44 +162,59 @@ public class HudView extends UIObject {
 
     /**
      * "Next Goal" под списком руд (п.4): что покупаем следующим и чего для
-     * этого не хватает. После падения в финальную комнату (п.6) переключается
-     * на единственную оставшуюся цель — сама кирка тут уже ни при чём.
+     * этого не хватает.
+     *
+     * После покупки алмазной кирки (максимальный тир) цель одна и та же —
+     * "исследуй подземный мир" — и остаётся видна всё это время; галочка на
+     * ней ставится не отдельным сообщением, а как только игрок долетел до
+     * финальной комнаты (isEndgameTriggered): чек-лист просто оказывается
+     * выполнен, а не переключается на другой текст.
      */
     private void drawGoal(Graphics2D g, Player p) {
         String title;
         String[] items;
         boolean[] done;
 
-        if (game.isEndgameTriggered()) {
+        Tool tool = p.getTool();
+        if (tool.isMaxed()) {
             title = "Goal: Dig.";
             items = new String[]{"Explore the underground in search of something unusual"};
-            done = new boolean[]{false};
+            done = new boolean[]{game.isEndgameTriggered()};
         } else {
-            Tool tool = p.getTool();
-            if (tool.isMaxed()) {
-                title = "Goal: Dig deeper.";
-                items = new String[]{"Find the bottom of the mine"};
-                done = new boolean[]{false};
-            } else {
-                OreType material = tool.getUpgradeMaterial();
-                int neededMoney = tool.getUpgradePrice();
-                int neededOre = tool.getUpgradeMaterialAmount();
-                title = "Goal: Buy " + tool.getNextName() + " Pickaxe.";
-                items = new String[]{
-                        "Earn $" + neededMoney,
-                        "Collect " + neededOre + " " + material.displayName
-                };
-                done = new boolean[]{
-                        p.getMoney() >= neededMoney,
-                        p.getOreCount(material) >= neededOre
-                };
-            }
+            OreType material = tool.getUpgradeMaterial();
+            int neededMoney = tool.getUpgradePrice();
+            int neededOre = tool.getUpgradeMaterialAmount();
+            title = "Goal: Buy " + tool.getNextName() + " Pickaxe.";
+            items = new String[]{
+                    "Earn $" + neededMoney,
+                    "Collect " + neededOre + " " + material.displayName
+            };
+            done = new boolean[]{
+                    p.getMoney() >= neededMoney,
+                    p.getOreCount(material) >= neededOre
+            };
         }
 
-        int lineH = 18;
         int padding = 8;
-        int boxW = 260;
-        int boxH = padding * 2 + lineH * (1 + items.length);
+        int boxW = 280;
+        int lineH = 16;
+        int titleH = 20;
+        int textWidth = boxW - padding * 2 - 20;   // запас под "[x] "
+
+        g.setFont(SMALL);
+        FontMetrics fm = g.getFontMetrics();
+
+        // длинные пункты (например, финальную цель) не обрезаем и не даём
+        // вылезти за панель — переносим на столько строк, сколько нужно
+        List<List<String>> wrapped = new ArrayList<>();
+        int totalLines = 0;
+        for (String item : items) {
+            List<String> lines = wrapText(fm, item, textWidth);
+            wrapped.add(lines);
+            totalLines += lines.size();
+        }
+
+        int boxH = padding * 2 + titleH + totalLines * lineH;
         int x = width - 12 - boxW;
         int y = 12 + OreType.values().length * 20 + 10;
 
@@ -209,11 +226,33 @@ public class HudView extends UIObject {
         g.drawString(title, x + padding, y + padding + 12);
 
         g.setFont(SMALL);
+        int curY = y + padding + titleH + 12;
         for (int i = 0; i < items.length; i++) {
-            String box = done[i] ? "[x] " : "[ ] ";
             g.setColor(done[i] ? GOAL_DONE : GOAL_PENDING);
-            g.drawString(box + items[i], x + padding, y + padding + (i + 2) * lineH - 4);
+            List<String> lines = wrapped.get(i);
+            for (int li = 0; li < lines.size(); li++) {
+                String prefix = li == 0 ? (done[i] ? "[x] " : "[ ] ") : "    ";
+                g.drawString(prefix + lines.get(li), x + padding, curY);
+                curY += lineH;
+            }
         }
+    }
+
+    /** Режет строку по словам так, чтобы каждая строка укладывалась в maxWidth пикселей. */
+    private List<String> wrapText(FontMetrics fm, String text, int maxWidth) {
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.split(" ")) {
+            String candidate = line.length() == 0 ? word : line + " " + word;
+            if (line.length() > 0 && fm.stringWidth(candidate) > maxWidth) {
+                lines.add(line.toString());
+                line = new StringBuilder(word);
+            } else {
+                line = new StringBuilder(candidate);
+            }
+        }
+        if (line.length() > 0) lines.add(line.toString());
+        return lines;
     }
 
     /** Подсказка рядом с игроком: NPC, лестница, товар торговца. */

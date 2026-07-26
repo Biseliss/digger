@@ -16,7 +16,7 @@ import java.awt.Graphics2D;
 /** Стартовое меню: Start Game / Settings / Quit. */
 public class MainMenu {
     private static final String[] TITLE_LINES = {
-            "A game about digging a hole", "as a shark"
+            "DIGGING A HOLE", "(etc.)"
     };
 
     private final GameWindow window;
