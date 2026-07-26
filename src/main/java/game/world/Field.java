@@ -219,15 +219,21 @@ public class Field {
      * обвал гравия сверху, каскад лавы, и обрушение лестниц/мостиков,
      * лишившихся опоры.
      *
-     * @return разрушенный блок — ровно один. Лестница/мостик больше не тянут
-     *         за собой всю конструкцию: то, что реально повисло без опоры,
-     *         обрушивается само по себе через onTileFreed (доп.), а не
-     *         возвращается игроку заодно с тем, что он выкопал специально.
+     * @return выкопанный блок первым, а следом — любые лестницы/мостики,
+     *         обрушившиеся цепной реакцией (лишились опоры не по своей вине).
+     *         Раньше обрушенные тайлы просто исчезали без возврата в карман —
+     *         с точки зрения игрока это выглядело как «лестница перестала
+     *         выпадать». Теперь они собираются в общий список точно так же,
+     *         как и обычный выкопанный блок — вызывающему (Game, Dynamite)
+     *         никакой разницы: он и так проверяет тип каждого блока в списке.
      */
     public List<Block> breakBlock(int tx, int ty) {
         Block b = getBlock(tx, ty);
         if (!inBounds(tx, ty) || b.isAir() || !b.getType().breakable) return List.of();
-        return List.of(removeTile(tx, ty));
+
+        List<Block> broken = new ArrayList<>();
+        broken.add(removeTile(tx, ty, broken));
+        return broken;
     }
 
     /**
@@ -236,12 +242,17 @@ public class Field {
      * Здесь его трогать не нужно: иначе гравий, разбитый не там, где лежал
      * изначально, стирал бы правильный фон своим временным типом.
      */
-    private Block removeTile(int tx, int ty) {
+    private Block removeTile(int tx, int ty, List<Block> collected) {
         Block b = getBlock(tx, ty);
         setBlock(tx, ty, new AirBlock(tx, ty));
         b.onBreak(this);
-        onTileFreed(tx, ty);
+        onTileFreed(tx, ty, collected);
         return b;
+    }
+
+    /** Оставлено для внешних вызовов (нет своего списка на обрушенные тайлы). */
+    public void onTileFreed(int tx, int ty) {
+        onTileFreed(tx, ty, null);
     }
 
     /**
@@ -250,14 +261,14 @@ public class Field {
      * плотный блок, под/над который ставили лестницу, она просто повисала в
      * воздухе — ничего не пересчитывало её опору вообще.
      */
-    public void onTileFreed(int tx, int ty) {
+    private void onTileFreed(int tx, int ty, List<Block> collected) {
         Block above = getBlock(tx, ty - 1);
         if (above.getType() == BlockType.GRAVEL) {
             startFalling(tx, ty - 1);
         } else if (above.getType() == BlockType.LAVA) {
             cascadeLava(tx, ty);
         }
-        collapseUnsupported(tx, ty);
+        collapseUnsupported(tx, ty, collected);
     }
 
     /**
@@ -267,14 +278,14 @@ public class Field {
      * "своей" оси: если соседняя лестница/мостик потеряли последнюю опору —
      * рушится только реально повисший кусок, а не вся конструкция целиком.
      */
-    private void collapseUnsupported(int tx, int ty) {
-        collapseLadderRun(tx, ty - 1);
-        collapseLadderRun(tx, ty + 1);
-        collapseBridgeRun(tx - 1, ty);
-        collapseBridgeRun(tx + 1, ty);
+    private void collapseUnsupported(int tx, int ty, List<Block> collected) {
+        collapseLadderRun(tx, ty - 1, collected);
+        collapseLadderRun(tx, ty + 1, collected);
+        collapseBridgeRun(tx - 1, ty, collected);
+        collapseBridgeRun(tx + 1, ty, collected);
     }
 
-    private void collapseLadderRun(int tx, int ty) {
+    private void collapseLadderRun(int tx, int ty, List<Block> collected) {
         if (!isLadder(tx, ty)) return;
         int top = ty;
         while (isLadder(tx, top - 1)) top--;
@@ -282,15 +293,25 @@ public class Field {
         while (isLadder(tx, bottom + 1)) bottom++;
         if (isSolid(tx, top - 1) || isSolid(tx, bottom + 1)) return;   // ещё держится
 
+        // Сначала убираем весь кусок из мира целиком, и только потом зовём
+        // onTileFreed по каждому тайлу: если открывать по одному "на лету",
+        // остаток того же куска ещё числится лестницей, цепная реакция снова
+        // находит его же и пересчитывает — один и тот же тайл задваивался
+        // (а то и учетверялся) в списке возврата в карман.
+        Block[] removed = new Block[bottom - top + 1];
         for (int y = top; y <= bottom; y++) {
-            Block b = getBlock(tx, y);
+            removed[y - top] = getBlock(tx, y);
             setBlock(tx, y, new AirBlock(tx, y));
+        }
+        for (int y = top; y <= bottom; y++) {
+            Block b = removed[y - top];
             b.onBreak(this);
-            onTileFreed(tx, y);   // цепная реакция — вдруг тут держалось что-то ещё
+            if (collected != null) collected.add(b);
+            onTileFreed(tx, y, collected);   // цепная реакция — вдруг тут держалось что-то ещё
         }
     }
 
-    private void collapseBridgeRun(int tx, int ty) {
+    private void collapseBridgeRun(int tx, int ty, List<Block> collected) {
         if (!isBridge(tx, ty)) return;
         int left = tx;
         while (isBridge(left - 1, ty)) left--;
@@ -298,11 +319,16 @@ public class Field {
         while (isBridge(right + 1, ty)) right++;
         if (isSolid(left - 1, ty) || isSolid(right + 1, ty)) return;   // ещё держится
 
+        Block[] removed = new Block[right - left + 1];
         for (int x = left; x <= right; x++) {
-            Block b = getBlock(x, ty);
+            removed[x - left] = getBlock(x, ty);
             setBlock(x, ty, new AirBlock(x, ty));
+        }
+        for (int x = left; x <= right; x++) {
+            Block b = removed[x - left];
             b.onBreak(this);
-            onTileFreed(x, ty);
+            if (collected != null) collected.add(b);
+            onTileFreed(x, ty, collected);
         }
     }
 
