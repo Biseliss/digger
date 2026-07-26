@@ -39,7 +39,7 @@ public final class Benchmark {
     }
 
     private static void measure(boolean freshTerrain) {
-        Game game = new Game(new Input(), Constants.WINDOW_W, Constants.WINDOW_H);
+        Game game = new Game(new Input(), Constants.WINDOW_W, Constants.WINDOW_H, null);
         Player p = game.getPlayer();
         BufferedImage target = new BufferedImage(Constants.WINDOW_W, Constants.WINDOW_H,
                 BufferedImage.TYPE_INT_RGB);
@@ -80,7 +80,7 @@ public final class Benchmark {
 
     /** Разбивка кадра по этапам — видно, кто именно ест время. */
     private static void stages() throws Exception {
-        Game game = new Game(new Input(), Constants.WINDOW_W, Constants.WINDOW_H);
+        Game game = new Game(new Input(), Constants.WINDOW_W, Constants.WINDOW_H, null);
         Player p = game.getPlayer();
 
         java.lang.reflect.Field ff = Game.class.getDeclaredField("field");

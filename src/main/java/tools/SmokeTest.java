@@ -50,7 +50,7 @@ public class SmokeTest {
         check("собрал руду по пути (" + p.getCarriedOre() + ")", !p.getCarriedOre().isEmpty());
 
         // 2. лимит переноса на тип
-        int limit = p.getTool().getOreCarryLimit();
+        int limit = p.getTool().getOreCarryLimit(OreType.STONE);
         for (int i = 0; i < 100; i++) p.addOre(OreType.STONE);
         check("лимит руды на тип соблюдён (" + p.getOreCount(OreType.STONE) + "/" + limit + ")",
                 p.getOreCount(OreType.STONE) == limit);
@@ -66,7 +66,7 @@ public class SmokeTest {
         int lvl = t.getLevel();
         t.upgrade();
         check("апгрейд поднимает тир и лимит",
-                t.getLevel() == lvl + 1 && t.getOreCarryLimit() > limit);
+                t.getLevel() == lvl + 1 && t.getOreCarryLimit(OreType.STONE) > limit);
 
         // 5. гейтинг по тиру: глубинную породу деревянной киркой не взять
         Player rookie = new Player(Constants.WORLD_W / 2, Constants.SURFACE_Y);

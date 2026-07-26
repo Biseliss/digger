@@ -34,6 +34,8 @@ public class Player {
 
     private final Map<OreType, Integer> carriedOre = new EnumMap<>(OreType.class);
     private final Map<UtilityType, Integer> utilities = new EnumMap<>(UtilityType.class);
+    /** Руды, которые игрок хоть раз добыл — до этого в HUD они скрыты за "???" (п.1). */
+    private final java.util.Set<OreType> discoveredOres = java.util.EnumSet.noneOf(OreType.class);
 
     /** Откуда начали падать — для урона по расстоянию (п.6). */
     private double fallStartY;
@@ -50,6 +52,30 @@ public class Player {
     private int digTargetY = Integer.MIN_VALUE;
 
     private String lastDeathReason = "";
+
+    /**
+     * Временный отладочный режим (тугл из Game): без урона, копание любой
+     * киркой мгновенное, расходники не тратятся при использовании — сама
+     * покупка "бесплатно" реализована в NPC, которые проверяют isGodMode().
+     */
+    private boolean godMode;
+
+    /** Копаем ли прямо сейчас — двигает анимацию взмаха кирки (п.4). */
+    private boolean digging;
+    /** Угол взмаха кирки, 0..45 градусов. */
+    private double pickaxeAngle;
+    private boolean pickaxeRising = true;
+    /**
+     * Сколько должен занимать один полный взмах (0->45->0) — привязано к
+     * реальному времени поломки текущего блока (см. dig()), а не к
+     * фиксированной скорости: иначе кирка ощутимо отстаёт от того, что блок
+     * уже пропал (или наоборот, крутится медленным метрономом на мягкой
+     * породе, которая ломается почти мгновенно).
+     */
+    private double pickaxeCycleSeconds = 0.2;
+
+    private static final double PICKAXE_MAX_ANGLE = 45;
+    private static final double PICKAXE_MIN_CYCLE_SECONDS = 0.08;
 
     public Player(double tileX, double tileY) {
         this.x = tileX * Constants.TILE;
@@ -142,6 +168,38 @@ public class Player {
 
         updateSteps(dt);
         applyEnvironmentDamage(dt, field);
+        updatePickaxeAnim(dt);
+    }
+
+    /**
+     * Взмах кирки: 0 -> 45 -> 0 градусов по треугольной волне, пока копаем.
+     * Отпустили кнопку резко — не останавливаем сразу, а доигрываем текущий
+     * полуцикл до нуля, иначе кирка дёргано замирает на середине взмаха (п.4).
+     */
+    private void updatePickaxeAnim(double dt) {
+        if (!digging && pickaxeAngle <= 0) return;
+
+        double degPerSec = (PICKAXE_MAX_ANGLE * 2) / pickaxeCycleSeconds;
+        double delta = degPerSec * dt;
+
+        if (pickaxeRising) {
+            pickaxeAngle += delta;
+            if (pickaxeAngle >= PICKAXE_MAX_ANGLE) {
+                pickaxeAngle = PICKAXE_MAX_ANGLE;
+                pickaxeRising = false;
+            }
+        } else {
+            pickaxeAngle -= delta;
+            if (pickaxeAngle <= 0) {
+                pickaxeAngle = 0;
+                pickaxeRising = digging;   // всё ещё копаем — уходим на новый взмах
+            }
+        }
+    }
+
+    /** Двигает ли игрок кирку прямо сейчас (вызывается из логики копания). */
+    public void setDigging(boolean digging) {
+        this.digging = digging;
     }
 
     /**
@@ -275,8 +333,10 @@ public class Player {
         }
         wasInLava = inLava;
 
-        // давление: слои 4-5 и только без снаряжения — оно убирает его полностью (п.3)
-        boolean underPressure = currentLayer().index() >= Layer.HOT.index() && !hasArmor();
+        // давление: слои 4-5 и только без снаряжения — оно убирает его полностью (п.3).
+        // Финальная комната исключена: это награда за спуск, а не ещё одно
+        // испытание — раньше без брони там убивало насмерть прямо у сундука.
+        boolean underPressure = currentLayer().index() >= Layer.HOT.index() && !hasArmor() && !inEndgameRoom();
         if (underPressure) {
             pressureTimer += dt;
             while (pressureTimer >= Constants.DAMAGE_TICK) {
@@ -287,6 +347,13 @@ public class Player {
         } else {
             pressureTimer = 0;
         }
+    }
+
+    private boolean inEndgameRoom() {
+        double tx = centerTileX();
+        double ty = centerTileY();
+        return tx >= Constants.CORE_ROOM_LEFT && tx <= Constants.CORE_ROOM_RIGHT
+                && ty >= Constants.CORE_ROOM_TOP && ty <= Constants.CORE_ROOM_BOTTOM;
     }
 
     private boolean touchingLava(Field field) {
@@ -307,7 +374,16 @@ public class Player {
         return hasArmor() ? amount / 2 : amount;
     }
 
+    public void setGodMode(boolean godMode) {
+        this.godMode = godMode;
+    }
+
+    public boolean isGodMode() {
+        return godMode;
+    }
+
     public void damage(int amount, String reason) {
+        if (godMode) return;
         if (amount <= 0) return;
         health -= amount;
         if (health <= 0) {
@@ -355,7 +431,7 @@ public class Player {
             resetDigTarget(field);
             return List.of();
         }
-        if (tool.getLevel() < block.requiredToolTier()) {
+        if (!godMode && tool.getLevel() < block.requiredToolTier()) {
             resetDigTarget(field);
             return List.of();
         }
@@ -364,9 +440,20 @@ public class Player {
             resetDigTarget(field);
             digTargetX = tx;
             digTargetY = ty;
+
+            // Взмах кирки укладывается ровно в ожидаемое время поломки ЭТОГО
+            // блока этим тиром — пересчитывается только на смену цели, а не
+            // каждый кадр (иначе скорость улетала бы в бесконечность на
+            // последних долях прочности).
+            double powerPerSec = godMode ? block.maxDurability() * 100 : tool.getDigSpeed() * 60;
+            double breakSeconds = block.maxDurability() / Math.max(1, powerPerSec);
+            pickaxeCycleSeconds = Math.max(PICKAXE_MIN_CYCLE_SECONDS, breakSeconds);
         }
 
-        int power = (int) Math.max(1, Math.round(tool.getDigSpeed() * 60 * dt));
+        // godmode: любой блок любой киркой — с одного касания (п. годмод)
+        int power = godMode
+                ? block.getDurability() + 1
+                : (int) Math.max(1, Math.round(tool.getDigSpeed() * 60 * dt));
         if (block.applyDigDamage(power)) {
             List<Block> broken = field.breakBlock(tx, ty);
             digTargetX = Integer.MIN_VALUE;
@@ -398,8 +485,9 @@ public class Player {
     /** @return true, если руда влезла (лимит отдельный на каждый тип, п.3). */
     public boolean addOre(OreType ore) {
         if (ore == null) return false;
+        discoveredOres.add(ore);   // добыт хотя бы раз, даже если не влез — руда уже не тайна
         int have = carriedOre.getOrDefault(ore, 0);
-        if (have >= tool.getOreCarryLimit()) return false;
+        if (have >= tool.getOreCarryLimit(ore)) return false;
         carriedOre.put(ore, have + 1);
         return true;
     }
@@ -410,6 +498,11 @@ public class Player {
 
     public int getOreCount(OreType ore) {
         return carriedOre.getOrDefault(ore, 0);
+    }
+
+    /** Показывать ли руду в HUD как есть, а не как "??? 0/0" (п.1). */
+    public boolean hasDiscovered(OreType ore) {
+        return discoveredOres.contains(ore);
     }
 
     /** Продажа всей руды разом (п.9). */
@@ -431,15 +524,17 @@ public class Player {
         return addUtility(type, 1);
     }
 
-    /** @return false, если пачка не влезает в стак целиком. */
+    /** @return false, если пачка не влезает в стак целиком (в godmode лимит не действует). */
     public boolean addUtility(UtilityType type, int amount) {
         int have = getUtility(type);
-        if (have + amount > type.carryLimit) return false;
+        if (!godMode && have + amount > type.carryLimit) return false;
         utilities.put(type, have + amount);
         return true;
     }
 
+    /** В godmode расходники не тратятся — "бесконечные". */
     public boolean consumeUtility(UtilityType type) {
+        if (godMode) return true;
         int have = getUtility(type);
         if (have <= 0) return false;
         utilities.put(type, have - 1);
@@ -498,5 +593,33 @@ public class Player {
         } else {
             g.drawImage(Textures.get("player"), sx + w, sy, -w, h, null);
         }
+
+        drawPickaxe(g, camX, camY, scale);
+    }
+
+    /**
+     * Кирка держится с небольшим оффсетом "назад" от направления движения
+     * (позади — если идём вправо, то левее центра) и зеркалится вместе с
+     * разворотом персонажа; во время копания крутится по pickaxeAngle (п.4).
+     */
+    private void drawPickaxe(Graphics2D g, double camX, double camY, int scale) {
+        double pivotWorldX = x + Constants.HITBOX_W / 2.0 + (facingRight ? -2 : 2);
+        double pivotWorldY = y + Constants.HITBOX_H * 0.45;
+
+        int px = (int) Math.round((pivotWorldX - camX) * scale);
+        int py = (int) Math.round((pivotWorldY - camY) * scale);
+        int size = 7 * scale;
+
+        double angleRad = Math.toRadians(facingRight ? pickaxeAngle : -pickaxeAngle);
+
+        java.awt.geom.AffineTransform old = g.getTransform();
+        g.translate(px, py);
+        g.rotate(angleRad);
+        if (facingRight) {
+            g.drawImage(Textures.get(tool.getIcon()), -size / 2, -size / 2, size, size, null);
+        } else {
+            g.drawImage(Textures.get(tool.getIcon()), size / 2, -size / 2, -size, size, null);
+        }
+        g.setTransform(old);
     }
 }

@@ -63,16 +63,41 @@ public class Audio {
     private volatile boolean playing;
     private volatile boolean looping;
     private volatile boolean stopRequested;
-    private Thread playbackThread;
+
+    /**
+     * Один постоянный воркер на инстанс вместо нового Thread + новой
+     * SourceDataLine на каждый play() — раньше короткий звук (шаг, удар
+     * киркой) означал создание/уничтожение системного потока и открытие/
+     * закрытие нативной аудио-линии по несколько раз в секунду при быстрой
+     * ходьбе или копании; это заметная нагрузка на CPU, не на память.
+     * Воркер спит на playLock между воспроизведениями и переиспользует одну
+     * и ту же линию всё время жизни объекта.
+     */
+    private final Object playLock = new Object();
+    private Thread worker;
+    private volatile boolean playRequested;
 
     private volatile float volume = 1f;
     /** Амплитуда, с которой реально сведён предыдущий кусок — для плавного перехода. */
     private float appliedAmplitude = 1f;
 
+    // --- реверб (п.5): чем глубже игрок, тем "гулче" звучит музыка ---
+
+    /** 0 — сухой сигнал как есть, 1 — полностью реверберированный. */
+    private volatile float reverbWet = 0f;
+    private static final int COMB_COUNT = 4;
+    private static final int[] COMB_DELAY_MS = {29, 37, 41, 47};
+    private static final float COMB_FEEDBACK = 0.55f;
+    /** Лениво заводится под фактический формат линии — только когда реверб реально включат. */
+    private float[][] combBuf;
+    private int[] combPos;
+    private int[] combLen;
+
     public Audio() {
         soundFiles.put("Soundtrack", "/sounds/soundtrack.wav");
         soundFiles.put("SFX_Dig", "/sounds/sfx_dig.wav");
         soundFiles.put("SFX_Step", "/sounds/step.wav");
+        soundFiles.put("SFX_Cash", "/sounds/cash.wav");
     }
 
     public void setFile(String key) {
@@ -124,9 +149,15 @@ public class Audio {
         stopRequested = false;
         playing = true;
 
-        playbackThread = new Thread(this::pump, "audio");
-        playbackThread.setDaemon(true);   // не держим JVM при выходе из игры
-        playbackThread.start();
+        if (worker == null) {
+            worker = new Thread(this::runWorker, "audio");
+            worker.setDaemon(true);   // не держим JVM при выходе из игры
+            worker.start();
+        }
+        synchronized (playLock) {
+            playRequested = true;
+            playLock.notifyAll();
+        }
     }
 
     /** Нехитрый resample по ближайшему сэмплу — меняет и питч, и длительность разом. */
@@ -143,28 +174,65 @@ public class Audio {
         return dst;
     }
 
+    /**
+     * Просит текущее воспроизведение остановиться и ждёт этого до 200мс —
+     * сам воркер-поток при этом не убиваем и не ждём (он живёт постоянно и
+     * дальше просто уснёт до следующего play()).
+     */
     public void stop() {
+        if (!playing) return;
         stopRequested = true;
-        Thread t = playbackThread;
-        if (t != null) {
-            try {
-                t.join(200);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        synchronized (playLock) {
+            long deadline = System.currentTimeMillis() + 200;
+            while (playing) {
+                long left = deadline - System.currentTimeMillis();
+                if (left <= 0) break;
+                try {
+                    playLock.wait(left);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
         }
         playing = false;
-        playbackThread = null;
     }
 
-    /** Гоняет PCM в линию кусками, применяя текущую громкость. */
-    private void pump() {
+    /**
+     * Живёт всё время существования Audio: открывает линию один раз, а затем
+     * на каждый play()/loop() прогоняет PCM и засыпает обратно в ожидании
+     * следующего запроса — вместо открытия новой линии в новом потоке на
+     * каждый одиночный звук.
+     */
+    private void runWorker() {
         SourceDataLine line = null;
         try {
             DataLine.Info info = new DataLine.Info(SourceDataLine.class, TARGET);
             line = (SourceDataLine) AudioSystem.getLine(info);
             int bufferBytes = (int) (TARGET.getFrameSize() * TARGET.getFrameRate() * LINE_BUFFER_SECONDS);
             line.open(TARGET, bufferBytes);
+
+            while (true) {
+                synchronized (playLock) {
+                    while (!playRequested) {
+                        playLock.wait();
+                    }
+                    playRequested = false;
+                }
+                pumpInto(line);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (line != null) line.close();
+        }
+    }
+
+    /** Гоняет PCM в открытую линию кусками, применяя текущую громкость. */
+    private void pumpInto(SourceDataLine line) {
+        try {
             line.start();
 
             int chunkBytes = CHUNK_FRAMES * TARGET.getFrameSize();
@@ -185,14 +253,13 @@ public class Audio {
             }
 
             if (!stopRequested) line.drain();
-        } catch (Exception e) {
-            e.printStackTrace();
+            line.stop();
+            line.flush();   // не оставляем в линии хвост для следующего, не связанного с этим, звука
         } finally {
-            if (line != null) {
-                line.stop();
-                line.close();
-            }
             playing = false;
+            synchronized (playLock) {
+                playLock.notifyAll();
+            }
         }
     }
 
@@ -231,7 +298,8 @@ public class Audio {
                 sample = (int) (sample * (1 - t) + head * t);
             }
 
-            int scaled = Math.round(sample * mix);
+            float processed = applyReverb(sample);
+            int scaled = Math.round(processed * mix);
             if (scaled > Short.MAX_VALUE) scaled = Short.MAX_VALUE;
             if (scaled < Short.MIN_VALUE) scaled = Short.MIN_VALUE;
 
@@ -239,6 +307,54 @@ public class Audio {
             dst[i * 2 + 1] = (byte) ((scaled >> 8) & 0xFF);
         }
         appliedAmplitude = target;
+    }
+
+    /**
+     * Насколько "гулкая" реверберация, 0..1 — двигается снаружи по глубине
+     * игрока (п.5). Буферы линий задержки заводятся лениво при первом
+     * реальном использовании, а не для каждого звука в игре.
+     */
+    public void setReverbWet(float value) {
+        reverbWet = Math.max(0f, Math.min(1f, value));
+    }
+
+    public float getReverbWet() {
+        return reverbWet;
+    }
+
+    private void ensureReverbBuffers() {
+        if (combBuf != null) return;
+        int sampleRate = (int) TARGET.getSampleRate();
+        int channels = TARGET.getFrameSize() / 2;   // 16 бит на канал
+        combBuf = new float[COMB_COUNT][];
+        combPos = new int[COMB_COUNT];
+        combLen = new int[COMB_COUNT];
+        for (int i = 0; i < COMB_COUNT; i++) {
+            int len = (COMB_DELAY_MS[i] * sampleRate / 1000) * channels;
+            combLen[i] = Math.max(channels, len);
+            combBuf[i] = new float[combLen[i]];
+        }
+    }
+
+    /**
+     * Простой банк гребенчатых фильтров с обратной связью (упрощённый
+     * Schroeder-реверб): дешёво по CPU, для "гулкости в шахте" этого хватает
+     * с запасом — полноценная свёртка тут явно избыточна.
+     */
+    private float applyReverb(int drySample) {
+        if (reverbWet <= 0.001f) return drySample;
+        ensureReverbBuffers();
+
+        float wetSum = 0f;
+        for (int i = 0; i < COMB_COUNT; i++) {
+            int p = combPos[i];
+            float delayed = combBuf[i][p];
+            combBuf[i][p] = drySample + delayed * COMB_FEEDBACK;
+            combPos[i] = (p + 1) % combLen[i];
+            wetSum += delayed;
+        }
+        wetSum /= COMB_COUNT;
+        return drySample * (1 - reverbWet) + wetSum * reverbWet;
     }
 
     /** 16-битный сэмпл little-endian по байтовому смещению. */

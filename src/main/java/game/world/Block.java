@@ -42,11 +42,16 @@ public abstract class Block {
         this.worldY = worldY;
         this.type = type;
         this.durability = type.durability;
-        this.rotation = pickRotation(worldX, worldY);
+        this.rotation = rotationFor(worldX, worldY);
     }
 
-    /** Поворачиваем только обычную породу — не фон, не лаву, не двери. */
-    private static int pickRotation(int x, int y) {
+    /**
+     * Поворачиваем только обычную породу — не фон, не лаву, не двери.
+     * Публичный и статический: фон (Chunk.background) — это голый BlockType без
+     * своего Block/rotation, но должен крутиться тем же способом, что и передний
+     * план того же тайла, иначе несовпадение поворотов бросается в глаза (п.11).
+     */
+    public static int rotationFor(int x, int y) {
         int h = x * 73856093 ^ y * 19349663;
         return ((h >>> 8) & 3) * 90;
     }

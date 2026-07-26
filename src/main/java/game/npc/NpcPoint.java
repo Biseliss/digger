@@ -2,9 +2,11 @@ package game.npc;
 
 import game.Constants;
 import game.entity.Player;
+import game.render.Animation;
 import game.render.Textures;
 
 import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
 
 /**
  * Точка взаимодействия на базе (п.9): NPC за прилавком, «подойти + E».
@@ -15,12 +17,39 @@ public abstract class NpcPoint {
     public final int tileY;
     private final String texture;
     private final String title;
+    /** Не у всех NPC портретная 1x2: например, krill лежит горизонтально (п.3). */
+    private final int tilesW;
+    private final int tilesH;
+    /** Идл-анимация вместо статичной текстуры — null, если её нет. */
+    private Animation idleAnim;
+    /** Иконка над головой (какая руда/кирка/утилита сейчас актуальна) — null, если её нет (п.4, доп.). */
+    private java.util.function.Supplier<String> overheadIcon;
 
     protected NpcPoint(int tileX, int tileY, String texture, String title) {
+        this(tileX, tileY, texture, title, 1, 2);
+    }
+
+    protected NpcPoint(int tileX, int tileY, String texture, String title, int tilesW, int tilesH) {
         this.tileX = tileX;
         this.tileY = tileY;
         this.texture = texture;
         this.title = title;
+        this.tilesW = tilesW;
+        this.tilesH = tilesH;
+    }
+
+    /** Задать зацикленную idle-анимацию (кадры "base0"/"base1"...) вместо статичной текстуры. */
+    protected void setIdleAnimation(Animation anim) {
+        this.idleAnim = anim;
+    }
+
+    /** Что показать иконкой над головой NPC — читается заново на каждом кадре отрисовки. */
+    protected void setOverheadIcon(java.util.function.Supplier<String> overheadIcon) {
+        this.overheadIcon = overheadIcon;
+    }
+
+    public void tick(double dt, Player player) {
+        if (idleAnim != null) idleAnim.tick(dt);
     }
 
     public String getTitle() {
@@ -34,14 +63,25 @@ public abstract class NpcPoint {
     /** Что показать в подсказке над игроком, пока он рядом. */
     public abstract String prompt(Player p);
 
-    /** Нажали E. */
-    public abstract void interact(Player p);
+    /** Нажали E. @return true, если это была успешная покупка (для эффекта монет, п.3). */
+    public abstract boolean interact(Player p);
 
     public void draw(Graphics2D g, double camX, double camY) {
         int scale = Constants.SCALE;
         int sx = (int) Math.round((tileX * Constants.TILE - camX) * scale);
-        int sy = (int) Math.round((tileY * Constants.TILE - camY) * scale);
-        g.drawImage(Textures.get(texture), sx, sy,
-                Constants.PLAYER_W * scale, Constants.PLAYER_H * scale, null);
+        // если NPC ниже стандартных 2 тайлов, ставим его на пол, а не по верхнему краю клетки
+        int sy = (int) Math.round(((tileY + 2 - tilesH) * Constants.TILE - camY) * scale);
+        BufferedImage img = idleAnim != null ? idleAnim.currentFrame() : Textures.get(texture);
+        g.drawImage(img, sx, sy, tilesW * Constants.TILE * scale, tilesH * Constants.TILE * scale, null);
+
+        if (overheadIcon != null) {
+            String tex = overheadIcon.get();
+            if (tex != null) {
+                int iconSize = Constants.TILE * scale;
+                int iconX = sx + (tilesW * Constants.TILE * scale - iconSize) / 2;
+                int iconY = sy - iconSize - scale;
+                g.drawImage(Textures.get(tex), iconX, iconY, iconSize, iconSize, null);
+            }
+        }
     }
 }

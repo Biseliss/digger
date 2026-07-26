@@ -18,8 +18,16 @@ import java.util.Map;
  * найти чанк под игроком — это O(1) по (cx, cy), а не проход по цепочке.
  */
 public class Field {
-    private final Map<ChunkCoord, Chunk> chunks = new HashMap<>();
+    /**
+     * Ключ — упакованные (cx, cy) в long, а не record ChunkCoord: этот словарь
+     * бьют коллизии игрока и лестниц (несколько раз за тик), волна видимости
+     * (десятки-сотни раз за тик) и отрисовка лавы (сотни раз за кадр) — там,
+     * где раньше на каждый вызов аллоцировался ChunkCoord, теперь примитив.
+     */
+    private final Map<Long, Chunk> chunks = new HashMap<>();
     private final List<FallingBlock> falling = new ArrayList<>();
+    /** Активные тайлы лавы (упакованный tx,ty) — отрисовка идёт по ним, а не по всему экрану. */
+    private final java.util.Set<Long> lavaTiles = new java.util.HashSet<>();
 
     /** Отдаётся за границами мира, чтобы вызывающим не приходилось знать про null. */
     private final Block outOfBounds = new SolidBlock(-1, -1, BlockType.BEDROCK);
@@ -46,7 +54,7 @@ public class Field {
                         chunk.set(lx, ly, new AirBlock(wx, wy));
                     }
                 }
-                chunks.put(new ChunkCoord(cx, cy), chunk);
+                chunks.put(pack(cx, cy), chunk);
             }
         }
     }
@@ -58,8 +66,7 @@ public class Field {
     }
 
     public Chunk chunkAt(int tx, int ty) {
-        return chunks.get(new ChunkCoord(Math.floorDiv(tx, Constants.CHUNK_W),
-                Math.floorDiv(ty, Constants.CHUNK_H)));
+        return chunks.get(pack(Math.floorDiv(tx, Constants.CHUNK_W), Math.floorDiv(ty, Constants.CHUNK_H)));
     }
 
     public Block getBlock(int tx, int ty) {
@@ -73,7 +80,18 @@ public class Field {
     public void setBlock(int tx, int ty, Block b) {
         if (!inBounds(tx, ty)) return;
         Chunk c = chunkAt(tx, ty);
-        if (c != null) c.set(Math.floorMod(tx, Constants.CHUNK_W), Math.floorMod(ty, Constants.CHUNK_H), b);
+        if (c == null) return;
+
+        int lx = Math.floorMod(tx, Constants.CHUNK_W);
+        int ly = Math.floorMod(ty, Constants.CHUNK_H);
+
+        // Реестр лавы (для drawLava) держим в актуальном состоянии здесь —
+        // это единственная точка, через которую блоки реально попадают в мир.
+        Block old = c.get(lx, ly);
+        if (old != null && old.getType() == BlockType.LAVA) lavaTiles.remove(pack(tx, ty));
+        if (b.getType() == BlockType.LAVA) lavaTiles.add(pack(tx, ty));
+
+        c.set(lx, ly, b);
     }
 
     public BlockType getBackground(int tx, int ty) {
@@ -211,7 +229,7 @@ public class Field {
         if (b.getType() == BlockType.LADDER) {
             breakLadderColumn(tx, ty, broken);
         } else {
-            broken.add(removeTile(tx, ty, true));
+            broken.add(removeTile(tx, ty));
         }
         return broken;
     }
@@ -227,17 +245,18 @@ public class Field {
         while (isLadder(tx, bottom + 1)) bottom++;
 
         for (int y = top; y <= bottom; y++) {
-            out.add(removeTile(tx, y, false));
+            out.add(removeTile(tx, y));
         }
     }
 
     /**
-     * @param leaveBackground оставить ли на месте блока тёмный фон (п.11).
-     *                        Лестница — не порода, после неё фону взяться неоткуда.
+     * Фон под сломанным тайлом уже выставлен генерацией мира (WorldGenerator,
+     * п.11) — по исходной породе слоя, а не по типу блока на момент раскопки.
+     * Здесь его трогать не нужно: иначе гравий, разбитый не там, где лежал
+     * изначально, стирал бы правильный фон своим временным типом.
      */
-    private Block removeTile(int tx, int ty, boolean leaveBackground) {
+    private Block removeTile(int tx, int ty) {
         Block b = getBlock(tx, ty);
-        if (leaveBackground) setBackground(tx, ty, b.getType());
         setBlock(tx, ty, new AirBlock(tx, ty));
         b.onBreak(this);
         onTileFreed(tx, ty);
@@ -359,7 +378,7 @@ public class Field {
 
         for (int cx = firstCx; cx <= lastCx; cx++) {
             for (int cy = firstCy; cy <= lastCy; cy++) {
-                Chunk c = chunks.get(new ChunkCoord(cx, cy));
+                Chunk c = chunks.get(pack(cx, cy));
                 if (c == null) continue;
                 int sx = (int) Math.round((cx * chunkPx - camX) * scale);
                 int sy = (int) Math.round((cy * chunkPx - camY) * scale);
@@ -387,6 +406,8 @@ public class Field {
      * клеток), и берём один общий кадр анимации на всю лаву.
      */
     private void drawLava(Graphics2D g, double camX, double camY, int viewW, int viewH) {
+        if (lavaTiles.isEmpty()) return;
+
         int scale = Constants.SCALE;
         int size = Constants.TILE * scale;
 
@@ -398,25 +419,28 @@ public class Field {
         var frame = lavaAnimation.currentFrame();
         var src = game.render.Textures.opaqueBounds(frame);
 
-        for (int tx = firstTx; tx <= lastTx; tx++) {
-            for (int ty = firstTy; ty <= lastTy; ty++) {
-                if (!inBounds(tx, ty)) continue;
-                Block b = getBlock(tx, ty);
-                if (b.getType() != BlockType.LAVA) continue;
-                if (!b.isRevealed()) continue;   // туман войны (п.7) действует и на лаву
+        // Лавы на весь уровень обычно горстка тайлов — идём по её реестру, а не
+        // по каждой клетке экрана каждый кадр (раньше это была сотня+ getBlock()
+        // с проверкой типа блока даже там, где лавы вообще нет во вьюпорте).
+        for (long key : lavaTiles) {
+            int tx = unpackX(key);
+            int ty = unpackY(key);
+            if (tx < firstTx || tx > lastTx || ty < firstTy || ty > lastTy) continue;
 
-                int sx = (int) Math.round((tx * Constants.TILE - camX) * scale);
-                int sy = (int) Math.round((ty * Constants.TILE - camY) * scale);
-                // непрозрачную часть кадра растягиваем на всю клетку, иначе
-                // между тайлами лужи видны щели (см. Textures.opaqueBounds)
-                g.drawImage(frame, sx, sy, sx + size, sy + size,
-                        src.x, src.y, src.x + src.width, src.y + src.height, null);
+            Block b = getBlock(tx, ty);
+            if (!b.isRevealed()) continue;   // туман войны (п.7) действует и на лаву
 
-                int shade = Chunk.depthShade(ty);
-                if (shade > 0) {
-                    g.setColor(Chunk.shadeColor(shade));
-                    g.fillRect(sx, sy, size, size);
-                }
+            int sx = (int) Math.round((tx * Constants.TILE - camX) * scale);
+            int sy = (int) Math.round((ty * Constants.TILE - camY) * scale);
+            // непрозрачную часть кадра растягиваем на всю клетку, иначе
+            // между тайлами лужи видны щели (см. Textures.opaqueBounds)
+            g.drawImage(frame, sx, sy, sx + size, sy + size,
+                    src.x, src.y, src.x + src.width, src.y + src.height, null);
+
+            int shade = Chunk.depthShade(ty);
+            if (shade > 0) {
+                g.setColor(Chunk.shadeColor(shade));
+                g.fillRect(sx, sy, size, size);
             }
         }
     }

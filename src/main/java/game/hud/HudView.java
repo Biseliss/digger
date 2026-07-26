@@ -72,7 +72,8 @@ public class HudView extends UIObject {
         g.drawString("$" + p.getMoney(), 12, 44);
         g.setFont(SMALL);
         g.setColor(DIM);
-        g.drawString(p.getTool().getName(), 12, 62);
+        g.drawImage(Textures.get(p.getTool().getIcon()), 12, 50, 16, 16, null);
+        g.drawString(p.getTool().getName(), 32, 62);
 
         int depth = Math.max(0, p.depth());
         g.drawString("Depth " + depth + "  (" + p.currentLayer().displayName + ")", 12, 78);
@@ -90,13 +91,24 @@ public class HudView extends UIObject {
         }
     }
 
+    private static final Color UNKNOWN = new Color(140, 140, 140);
+
     private void drawOres(Graphics2D g, Player p) {
         g.setFont(SMALL);
-        int limit = p.getTool().getOreCarryLimit();
         int y = 12;
         for (OreType ore : OreType.values()) {
-            int count = p.getOreCount(ore);
             int right = width - 12;
+
+            if (!p.hasDiscovered(ore)) {
+                // руду ещё не находили — не спойлерим ни иконку, ни лимит (п.1)
+                g.setColor(UNKNOWN);
+                g.drawString("??? 0/0", right - 78, y + 13);
+                y += 20;
+                continue;
+            }
+
+            int count = p.getOreCount(ore);
+            int limit = p.getTool().getOreCarryLimit(ore);
             boolean full = count >= limit;
 
             g.drawImage(Textures.get(ore.icon), right - 78, y, 16, 16, null);

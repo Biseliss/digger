@@ -19,10 +19,12 @@ public class UtilityShopNpc extends NpcPoint {
     private int selectedIndex;
 
     public UtilityShopNpc(int tileX, int tileY) {
-        super(tileX, tileY, "npc_utility", "Utility shop");
+        super(tileX, tileY, "npc/vlc/vlc", "Utility shop");
         for (UtilityType type : UtilityType.values()) {
             offers.add(new UtilityOffer(type, type.price));
         }
+        // иконка над головой — тот товар, что сейчас выбран Q/колесом (п.4, доп.)
+        setOverheadIcon(() -> selected().type().icon);
     }
 
     public List<UtilityOffer> getOffers() {
@@ -58,13 +60,19 @@ public class UtilityShopNpc extends NpcPoint {
     }
 
     @Override
-    public void interact(Player p) {
+    public boolean interact(Player p) {
         UtilityOffer offer = selected();
         UtilityType type = offer.type();
-        if (p.getMoney() < offer.price()) return;
-        if (type.passive && p.getUtility(type) > 0) return;   // второй факел ни к чему
+        if (type.passive && p.getUtility(type) > 0) return false;   // второй факел ни к чему
+
+        if (p.isGodMode()) {
+            return p.addUtility(type, type.purchaseAmount);
+        }
+        if (p.getMoney() < offer.price()) return false;
         if (p.addUtility(type, type.purchaseAmount)) {
             p.spendMoney(offer.price());
+            return true;
         }
+        return false;
     }
 }

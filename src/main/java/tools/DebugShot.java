@@ -27,7 +27,7 @@ public final class DebugShot {
         for (int i = 1; i < args.length; i++) depths[i - 1] = Integer.parseInt(args[i]);
         if (depths.length == 0) depths = new int[]{0, 45, 100, 160, 225};
 
-        Game game = new Game(new Input(), Constants.WINDOW_W, Constants.WINDOW_H);
+        Game game = new Game(new Input(), Constants.WINDOW_W, Constants.WINDOW_H, null);
 
         for (int depth : depths) {
             game.getPlayer().teleportToTile(Constants.WORLD_W / 2, Constants.SURFACE_Y + depth);

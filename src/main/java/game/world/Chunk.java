@@ -127,7 +127,10 @@ public class Chunk {
 
                     BlockType bg = background[lx][ly];
                     if (bg != null) {
-                        g.drawImage(Textures.get(bg.texture), dx, dy, Constants.TILE, Constants.TILE, null);
+                        int worldX = cx * Constants.CHUNK_W + lx;
+                        int worldY = cy * Constants.CHUNK_H + ly;
+                        int bgRot = bg.isRotatable() ? Block.rotationFor(worldX, worldY) : 0;
+                        g.drawImage(Textures.get(bg.texture, bgRot), dx, dy, Constants.TILE, Constants.TILE, null);
                         // задний план — та же текстура, но заметно темнее (п.11)
                         g.setColor(BACKGROUND_SHADE);
                         g.fillRect(dx, dy, Constants.TILE, Constants.TILE);

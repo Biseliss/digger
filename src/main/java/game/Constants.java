@@ -31,10 +31,26 @@ public final class Constants {
     public static final int LAYER_2_END = 45;
     public static final int LAYER_3_END = 75;
     public static final int LAYER_4_END = 110;
-    public static final int CORE_ROOM_H = 20;                         // финальная комната с дверью
+    public static final int CORE_ROOM_H = 20;                         // финальная комната (п.6)
     public static final int WORLD_H = SURFACE_Y + LAYER_4_END + CORE_ROOM_H + 4;
 
     public static final int LAYER_BOUNDARY_WAVE = 6;                  // амплитуда «дуг» на границах слоёв
+
+    // --- Финальная локация за вратами (п.6) ---
+    // Вход в последний слой (CORE) больше не докапывают вручную: стоит игроку
+    // дойти до этой глубины в любой точке карты — начинается скриптовое падение
+    // в темноте и телепорт в центр этой же комнаты, gate-main — у левого края.
+    public static final int CORE_ROOM_TOP = SURFACE_Y + LAYER_4_END + 4;
+    public static final int CORE_ROOM_BOTTOM = CORE_ROOM_TOP + CORE_ROOM_H - 1;
+    public static final int CORE_ROOM_LEFT = 4;
+    public static final int CORE_ROOM_RIGHT = WORLD_W - 5;
+    public static final int CORE_ROOM_CENTER_X = (CORE_ROOM_LEFT + CORE_ROOM_RIGHT) / 2;
+
+    // Три фазы затемнения: гаснет (мир ещё виден) -> целиком чёрный (тут
+    // прячется телепорт) -> плавно проявляется уже в финальной комнате.
+    public static final double ENDGAME_FADE_OUT = 0.4;
+    public static final double ENDGAME_BLACK_HOLD = 0.5;
+    public static final double ENDGAME_FADE_IN = 0.6;
 
     // --- Игрок (п.14) ---
     public static final int PLAYER_MAX_HP = 100;                      // внутреннее HP
@@ -83,9 +99,6 @@ public final class Constants {
     /** Скорость копания по тиру: камень и медь — один слой, но медь быстрее (п.3). */
     public static final double[] DIG_SPEED = {1.0, 1.6, 2.4, 3.4, 5.0};
 
-    public static final int ORE_CARRY_BASE = 10;                      // лимит на тип руды
-    public static final int ORE_CARRY_PER_TIER = 5;
-
     // --- Генерация (п.5) ---
     public static final long DEFAULT_SEED = 1337L;
     public static final int CAVE_MIN_DEPTH = 12;                      // не роем пещеры у самой поверхности
@@ -110,8 +123,11 @@ public final class Constants {
     public static final double BLOCK_SHAKE_AMPLITUDE = 1.2;           // px, дрожь блока под киркой
     public static final double SCREEN_SHAKE_TIME = 0.35;              // сек, тряска от урона
     public static final double SCREEN_SHAKE_AMPLITUDE = 5;            // px на полной силе
-    public static final double DIG_SOUND_COOLDOWN = 0.12;             // сек между звуками поломки
     public static final int BREAK_STAGES = 4;                         // кадров трещин в textures/break
+
+    // --- Реверб музыки по глубине (п.5) ---
+    public static final double MUSIC_REVERB_MAX_DEPTH = 150;          // глубина, на которой реверб уже максимальный
+    public static final float MUSIC_REVERB_MAX_WET = 0.55f;
 
     // --- Звук шагов ---
     public static final double STEP_DISTANCE = 12;                    // px пройдено между шагами

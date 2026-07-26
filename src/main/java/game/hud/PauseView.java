@@ -28,15 +28,16 @@ public class PauseView extends UIObject {
 
     /** Памятка по управлению (п.2 ТЗ). */
     private static final String[][] CONTROLS = {
-            {"WASD / стрелки", "движение, W — прыжок"},
-            {"W / S", "лезть вверх-вниз по лестнице"},
-            {"ЛКМ", "копать блок под курсором"},
-            {"F", "поставить лестницу"},
-            {"G", "поставить динамит"},
-            {"E", "торговцы на базе"},
-            {"Q / колесо", "листать товар у торговца"},
-            {"X", "застрял — вернуться на базу"},
-            {"Esc", "пауза"},
+            {"WASD / Arrows", "move, W to jump"},
+            {"W / S", "climb up/down a ladder"},
+            {"LMB", "dig the block under the cursor"},
+            {"F", "place a ladder"},
+            {"G", "place dynamite"},
+            {"E", "talk to shop NPCs"},
+            {"Q / wheel", "cycle shop item"},
+            {"X", "stuck? return to base"},
+            {"Tab", "toggle fullscreen"},
+            {"Esc", "pause"},
     };
 
     public PauseView(int width, int height) {
@@ -57,7 +58,12 @@ public class PauseView extends UIObject {
     }
 
     public int panelHeight() {
-        return 420;
+        return 560;
+    }
+
+    /** Где начинаются кнопки "Main Menu"/"Quit Game" — Game кладёт их сюда. */
+    public int buttonsY() {
+        return panelY() + 450;
     }
 
     @Override
@@ -81,23 +87,23 @@ public class PauseView extends UIObject {
         g.setFont(TITLE);
         g.setColor(TITLE_COLOR);
         FontMetrics fm = g.getFontMetrics();
-        String title = "ПАУЗА";
+        String title = "PAUSED";
         g.drawString(title, px + (pw - fm.stringWidth(title)) / 2, py + 52);
 
         // отступ такой, чтобы список не липнул к нижнему ползунку громкости
-        drawControls(g, px + 28, py + 196, pw - 56);
+        drawControls(g, px + 28, py + 206, pw - 56);
 
         g.setFont(HINT_TEXT);
         g.setColor(FOOTER_COLOR);
         FontMetrics ffm = g.getFontMetrics();
-        String footer = "Esc — продолжить";
+        String footer = "Esc - Resume";
         g.drawString(footer, px + (pw - ffm.stringWidth(footer)) / 2, py + ph - 20);
     }
 
     private void drawControls(Graphics2D g, int x, int y, int w) {
         g.setFont(HINT_TEXT);
         g.setColor(TEXT_COLOR);
-        g.drawString("Управление", x, y);
+        g.drawString("Controls", x, y);
 
         int rowY = y + 22;
         for (String[] row : CONTROLS) {

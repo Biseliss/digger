@@ -7,6 +7,7 @@ import java.awt.Canvas;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
@@ -34,6 +35,29 @@ public class GameWindow {
     private volatile boolean running;
     private Thread loopThread;
 
+    /** Tab переключает полноэкранный режим независимо от игровой логики. */
+    private boolean fullscreen;
+
+    /**
+     * setFullscreen выполняется на EDT (из KeyListener), а рендер — на своём
+     * "game-loop" потоке. Без этой блокировки цикл мог схватить canvas ровно
+     * в момент между dispose() и новым setVisible(true) — peer в этот момент
+     * временно недействителен, и strategy.getDrawGraphics() падал с
+     * IllegalStateException. Оборачиваем обе стороны одним монитором, чтобы
+     * пересоздание peer'а и рендер кадра никогда не пересекались по времени.
+     */
+    private final Object peerLock = new Object();
+
+    /**
+     * Letterbox-подгонка текущего кадра: канвас в полноэкранном режиме крупнее
+     * логического разрешения width x height, и мышь репортит координаты уже в
+     * реальных пикселях канваса — их нужно обратно пересчитать в логические,
+     * иначе курсор для копания и клики по UI будут промахиваться мимо цели.
+     */
+    private volatile double renderScale = 1.0;
+    private volatile int renderOffX;
+    private volatile int renderOffY;
+
     public GameWindow(String title, int width, int height) {
         this(title, width, height, 60.0);
     }
@@ -46,6 +70,10 @@ public class GameWindow {
         canvas = new Canvas();
         canvas.setPreferredSize(new Dimension(width, height));
         canvas.setFocusable(true);
+        // Иначе Tab у AWT по умолчанию — клавиша смены фокуса между
+        // компонентами: KeyListener её попросту не увидит, и toggleFullscreen()
+        // никогда не вызовется, как бы часто Tab ни жали.
+        canvas.setFocusTraversalKeysEnabled(false);
 
         frame = new JFrame(title);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -57,28 +85,32 @@ public class GameWindow {
         MouseAdapter mouse = new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                input.mouseMoved(e.getX(), e.getY());
+                int lx = toLogicalX(e.getX());
+                int ly = toLogicalY(e.getY());
+                input.mouseMoved(lx, ly);
                 input.mouseButton(e.getButton(), true);
                 Screen s = uiScreen;
-                if (s != null) s.handleMousePressed(e.getX(), e.getY(), e.getButton());
+                if (s != null) s.handleMousePressed(lx, ly, e.getButton());
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                input.mouseMoved(e.getX(), e.getY());
+                int lx = toLogicalX(e.getX());
+                int ly = toLogicalY(e.getY());
+                input.mouseMoved(lx, ly);
                 input.mouseButton(e.getButton(), false);
                 Screen s = uiScreen;
-                if (s != null) s.handleMouseReleased(e.getX(), e.getY(), e.getButton());
+                if (s != null) s.handleMouseReleased(lx, ly, e.getButton());
             }
 
             @Override
             public void mouseMoved(MouseEvent e) {
-                input.mouseMoved(e.getX(), e.getY());
+                input.mouseMoved(toLogicalX(e.getX()), toLogicalY(e.getY()));
             }
 
             @Override
             public void mouseDragged(MouseEvent e) {
-                input.mouseMoved(e.getX(), e.getY());
+                input.mouseMoved(toLogicalX(e.getX()), toLogicalY(e.getY()));
             }
 
             @Override
@@ -93,6 +125,12 @@ public class GameWindow {
         canvas.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
+                // Tab, а не F11: F-клавиши на части клавиатур (особенно
+                // ноутбучных) требуют Fn и легко промахиваются.
+                if (e.getKeyCode() == KeyEvent.VK_TAB) {
+                    toggleFullscreen();
+                    return;
+                }
                 input.keyDown(e.getKeyCode());
             }
 
@@ -103,8 +141,59 @@ public class GameWindow {
         });
     }
 
+    public boolean isFullscreen() {
+        return fullscreen;
+    }
+
+    public void toggleFullscreen() {
+        setFullscreen(!fullscreen);
+    }
+
+    /**
+     * Полноэкранный режим — безрамочное окно на весь экран, а не exclusive
+     * fullscreen API (device.setFullScreenWindow): с ним, если единственная
+     * клавиша выхода вдруг не сработает (как уже случилось с Tab), из игры
+     * не выбраться вообще ничем, вплоть до перезагрузки. Обычное окно
+     * (пусть и без рамки, во весь экран) по-прежнему сворачивается
+     * Alt+Tab/Cmd+Tab средствами самой ОС — это подстраховка, а не основной
+     * способ выхода. Пересоздаём peer'ы фрейма (dispose/show), поэтому
+     * buffer strategy в игровом цикле берём каждый раз заново.
+     */
+    public void setFullscreen(boolean on) {
+        if (on == fullscreen) return;
+
+        synchronized (peerLock) {
+            frame.setVisible(false);
+            frame.dispose();
+            if (on) {
+                frame.setUndecorated(true);
+                var bounds = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                        .getDefaultScreenDevice().getDefaultConfiguration().getBounds();
+                frame.setBounds(bounds);
+                frame.setVisible(true);
+            } else {
+                frame.setUndecorated(false);
+                frame.pack();
+                frame.setLocationRelativeTo(null);
+                frame.setVisible(true);
+            }
+            fullscreen = on;
+
+            canvas.createBufferStrategy(2);
+            canvas.requestFocus();
+        }
+    }
+
     public Input getInput() {
         return input;
+    }
+
+    private int toLogicalX(int screenPx) {
+        return (int) ((screenPx - renderOffX) / renderScale);
+    }
+
+    private int toLogicalY(int screenPx) {
+        return (int) ((screenPx - renderOffY) / renderScale);
     }
 
     public void setScene(Scene scene) {
@@ -132,9 +221,11 @@ public class GameWindow {
     }
 
     public void start() {
-        frame.setVisible(true);
-        canvas.createBufferStrategy(2);
-        canvas.requestFocus();
+        synchronized (peerLock) {
+            frame.setVisible(true);
+            canvas.createBufferStrategy(2);
+            canvas.requestFocus();
+        }
         running = true;
         loopThread = new Thread(this::loop, "game-loop");
         loopThread.start();
@@ -145,7 +236,6 @@ public class GameWindow {
     }
 
     private void loop() {
-        BufferStrategy strategy = canvas.getBufferStrategy();
         long lastTime = System.nanoTime();
         final long nsPerFrame = (long) (1_000_000_000.0 / targetFps);
 
@@ -158,19 +248,48 @@ public class GameWindow {
             Scene s = scene;
             if (s != null) s.tick(dt);
 
-            do {
+            // Всё, что трогает canvas/frame, — под тем же локом, что и
+            // setFullscreen(): иначе тугл посреди кадра ловит невалидный peer
+            // (см. комментарий у peerLock).
+            synchronized (peerLock) {
+                // берём buffer strategy каждый кадр — Tab пересоздаёт peer канваса,
+                // и закэшированная на входе в цикл ссылка после этого стала бы мёртвой
+                BufferStrategy strategy = canvas.getBufferStrategy();
+                if (strategy == null) {
+                    canvas.createBufferStrategy(2);
+                    strategy = canvas.getBufferStrategy();
+                }
+
+                // логика всегда рисует в фиксированном разрешении width x height;
+                // в полноэкранном режиме канвас крупнее — вписываем с сохранением
+                // пропорций (letterbox), а не растягиваем и не обрезаем картинку
+                int cw = Math.max(1, canvas.getWidth());
+                int ch = Math.max(1, canvas.getHeight());
+                double fit = Math.min(cw / (double) width, ch / (double) height);
+                int drawW = (int) Math.round(width * fit);
+                int drawH = (int) Math.round(height * fit);
+                int offX = (cw - drawW) / 2;
+                int offY = (ch - drawH) / 2;
+                renderScale = fit;
+                renderOffX = offX;
+                renderOffY = offY;
+
                 do {
-                    Graphics2D g = (Graphics2D) strategy.getDrawGraphics();
-                    try {
-                        g.setColor(Color.BLACK);
-                        g.fillRect(0, 0, width, height);
-                        if (s != null) s.draw(new DrawCtx(g, 0, 0));
-                    } finally {
-                        g.dispose();
-                    }
-                } while (strategy.contentsRestored());
-                strategy.show();
-            } while (strategy.contentsLost());
+                    do {
+                        Graphics2D g = (Graphics2D) strategy.getDrawGraphics();
+                        try {
+                            g.setColor(Color.BLACK);
+                            g.fillRect(0, 0, cw, ch);
+                            g.translate(offX, offY);
+                            g.scale(fit, fit);
+                            if (s != null) s.draw(new DrawCtx(g, 0, 0));
+                        } finally {
+                            g.dispose();
+                        }
+                    } while (strategy.contentsRestored());
+                    strategy.show();
+                } while (strategy.contentsLost());
+            }
 
             input.endFrame();
 

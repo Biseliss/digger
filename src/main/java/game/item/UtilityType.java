@@ -6,7 +6,9 @@ package game.item;
  * расходуются по штуке.
  */
 public enum UtilityType {
-    TORCH("Torch", 30, "icon_torch", true, 1, 1),
+    // lantern/icon_ladder — уже готовые нарисованные иконки (п.4). Armor пока
+    // оставлен плейсхолдером — под него будет отдельный костюм позже.
+    TORCH("Torch", 30, "lantern", true, 1, 1),
     ARMOR("Armor", 250, "icon_armor", true, 1, 1),
     DYNAMITE("Dynamite", 40, "icon_dynamite", false, 5, 1),
     /** Лестницы продаются пачкой и стакаются — это расходный стройматериал (п.8). */

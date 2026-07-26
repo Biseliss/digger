@@ -7,10 +7,15 @@ public class Main {
     public static void main(String[] args) {
         configureJava2D();
 
-        GameWindow window = new GameWindow("Hole", Constants.WINDOW_W, Constants.WINDOW_H);
-        Game game = new Game(window.getInput(), Constants.WINDOW_W, Constants.WINDOW_H);
-        window.setScene(game);
+        GameWindow window = new GameWindow("A game about digging a hole as a shark",
+                Constants.WINDOW_W, Constants.WINDOW_H);
+        MainMenu menu = new MainMenu(window, Constants.WINDOW_W, Constants.WINDOW_H);
+        window.setScreen(menu.getScreen());
+
         window.start();
+        // F11 требует Fn на части клавиатур и легко промахивается — стартуем
+        // сразу в полноэкранном режиме, Tab переключает обратно в окно.
+        window.setFullscreen(true);
     }
 
     /**

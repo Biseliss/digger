@@ -20,6 +20,13 @@ public class WorldGenerator {
     private final BlockType[][] tiles = new BlockType[Constants.WORLD_W][Constants.WORLD_H];
     /** Маска руды поверх породы — параллельно tiles, null значит чистый камень. */
     private final OreType[][] ores = new OreType[Constants.WORLD_W][Constants.WORLD_H];
+    /**
+     * Порода слоя ДО пещер/лавы/гравия — фон подземелья берём отсюда, а не с
+     * типа блока на момент раскопки. Иначе гравий, упавший и разбитый не там,
+     * где был изначально, оставлял бы после себя пустой (чёрный) фон вместо
+     * породы, которая там залегала с начала игры.
+     */
+    private final BlockType[][] origRock = new BlockType[Constants.WORLD_W][Constants.WORLD_H];
 
     public WorldGenerator(long seed) {
         this.seed = seed;
@@ -29,6 +36,9 @@ public class WorldGenerator {
 
     public void generateInto(Field field) {
         generateLayers();
+        for (int x = 0; x < Constants.WORLD_W; x++) {
+            origRock[x] = tiles[x].clone();   // снимок «как заложено слоями», до пещер/гравия
+        }
         generateCaves();
         generateHazards();
         generateOres();
@@ -243,21 +253,32 @@ public class WorldGenerator {
         }
     }
 
-    // --- 5. Финальная комната с жёлтой дверью (п.10) ---
+    // --- 5. Финальная комната за вратами (п.6) ---
 
+    /**
+     * Комната самодостаточна: пол и боковые стены — несокрушимый бедрок, чтобы
+     * из неё нельзя было ни выкопаться наружу, ни провалиться сквозь пол.
+     * Попадают сюда не ходьбой, а скриптовым падением-телепортом (Game),
+     * когда игрок докапывается до этой глубины в любой точке карты.
+     */
     private void carveCoreRoom() {
-        int roomTop = Constants.SURFACE_Y + Constants.LAYER_4_END + 4;
-        int roomBottom = Math.min(Constants.WORLD_H - 3, roomTop + 10);
-        int cx = Constants.WORLD_W / 2;
+        int top = Constants.CORE_ROOM_TOP;
+        int bottom = Constants.CORE_ROOM_BOTTOM;
+        int left = Constants.CORE_ROOM_LEFT;
+        int right = Constants.CORE_ROOM_RIGHT;
 
-        for (int x = cx - 9; x <= cx + 9; x++) {
-            for (int y = roomTop; y <= roomBottom; y++) {
+        for (int x = left; x <= right; x++) {
+            for (int y = top; y <= bottom; y++) {
                 if (Field.inBounds(x, y)) tiles[x][y] = BlockType.AIR;
             }
         }
-        // дверь стоит на полу комнаты
-        tiles[cx][roomBottom] = BlockType.YELLOW_DOOR;
-        tiles[cx][roomBottom - 1] = BlockType.YELLOW_DOOR;
+        for (int x = left; x <= right; x++) {
+            tiles[x][bottom] = BlockType.BEDROCK;
+        }
+        for (int y = top; y <= bottom; y++) {
+            tiles[left][y] = BlockType.BEDROCK;
+            tiles[right][y] = BlockType.BEDROCK;
+        }
     }
 
     // --- перенос в Field ---
@@ -269,12 +290,19 @@ public class WorldGenerator {
                 if (ores[x][y] != null) block.setOre(ores[x][y]);
                 field.setBlock(x, y, block);
 
-                // Природным пустотам тоже даём задний план породы своего слоя.
-                // ТЗ описывает фон только для раскопанных игроком тайлов, но без
-                // этого пещеры выглядят дырами в никуда, а не полостями в породе.
-                // Убрать — просто снять этот if.
-                if (tiles[x][y] == BlockType.AIR && y > Constants.SURFACE_Y) {
-                    field.setBackground(x, y, Layer.atWorldY(y).baseBlock);
+                // Фон фиксируем один раз при генерации, по исходной породе слоя —
+                // а не по типу блока на момент раскопки (п.11). Так у природных
+                // пещер за фон видна порода, а не дыра в никуда, а у гравия,
+                // упавшего и разбитого в другом месте, фон остаётся той же
+                // породой, что стояла там с начала игры, а не чёрной пустотой.
+                //
+                // Финальную комнату (п.6) исключаем: там вместо породы за фоном
+                // должна проступать нарисованная сцена gate-*, которую поверх
+                // чёрной заливки рисует Game — глухой фон породы её бы перекрыл.
+                boolean inCoreRoom = x >= Constants.CORE_ROOM_LEFT && x <= Constants.CORE_ROOM_RIGHT
+                        && y >= Constants.CORE_ROOM_TOP && y <= Constants.CORE_ROOM_BOTTOM;
+                if (!inCoreRoom && y > Constants.SURFACE_Y && origRock[x][y] != BlockType.AIR) {
+                    field.setBackground(x, y, origRock[x][y]);
                 }
             }
         }
@@ -285,12 +313,10 @@ public class WorldGenerator {
             }
         }
 
-        // финальную комнату раскрываем целиком: панчлайн с дверью должен быть
-        // виден сразу при входе, а не нащупываться в темноте по одному тайлу
-        int roomTop = Constants.SURFACE_Y + Constants.LAYER_4_END + 3;
-        int cx = Constants.WORLD_W / 2;
-        for (int x = cx - 10; x <= cx + 10; x++) {
-            for (int y = roomTop; y < Constants.WORLD_H; y++) {
+        // финальную комнату раскрываем целиком: попадаем туда телепортом при
+        // падении, нащупывать её в темноте по тайлу не приходится
+        for (int x = Constants.CORE_ROOM_LEFT; x <= Constants.CORE_ROOM_RIGHT; x++) {
+            for (int y = Constants.CORE_ROOM_TOP; y <= Constants.CORE_ROOM_BOTTOM; y++) {
                 field.reveal(x, y);
             }
         }
@@ -308,8 +334,7 @@ public class WorldGenerator {
     private boolean isDense(int x, int y) {
         if (!Field.inBounds(x, y)) return false;
         BlockType t = tiles[x][y];
-        return t != BlockType.AIR && t != BlockType.LAVA && t != BlockType.BEDROCK
-                && t != BlockType.YELLOW_DOOR;
+        return t != BlockType.AIR && t != BlockType.LAVA && t != BlockType.BEDROCK;
     }
 
     public long getSeed() {

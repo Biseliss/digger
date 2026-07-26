@@ -23,8 +23,7 @@ public enum BlockType {
     // Особые
     GRAVEL("block_gravel", true, 10, null, true),
     LAVA("block_lava", false, 0, null, false),          // не копается (п.6)
-    BEDROCK("block_bedrock", true, 0, null, false),     // граница мира
-    YELLOW_DOOR("door", false, 0, null, false),         // финальная цель (п.10)
+    BEDROCK("block_bedrock", true, 0, null, false),     // граница мира, и стены/пол финальной комнаты (п.6)
     /** Ставится игроком: сквозь неё ходят и по ней лазают, но она не держит (п.8). */
     LADDER("ladder", false, 4, null, true);
 
@@ -54,6 +53,6 @@ public enum BlockType {
      * лавы и двери поворот сломал бы читаемость — верх должен быть верхом.
      */
     public boolean isRotatable() {
-        return breakable && this != LAVA && this != YELLOW_DOOR && this != LADDER;
+        return breakable && this != LAVA && this != LADDER;
     }
 }
