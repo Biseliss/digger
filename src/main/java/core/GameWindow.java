@@ -282,6 +282,12 @@ public class GameWindow {
                             g.fillRect(0, 0, cw, ch);
                             g.translate(offX, offY);
                             g.scale(fit, fit);
+                            // Без этого клипа сцена не обрезана по границе логического
+                            // разрешения: любой лишний пиксель отрисовки (край чанка,
+                            // спрайт у самой кромки экрана и т.п.) утекал в
+                            // letterbox-поля на широких мониторах — там, где должна
+                            // быть чёрная рамка, вместо неё проглядывала карта.
+                            g.clipRect(0, 0, width, height);
                             if (s != null) s.draw(new DrawCtx(g, 0, 0));
                         } finally {
                             g.dispose();

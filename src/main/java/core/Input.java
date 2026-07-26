@@ -1,7 +1,10 @@
 package core;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import javax.swing.Timer;
 
 /**
  * Состояние ввода. Заполняется из AWT-потока событий, читается из игрового
@@ -21,12 +24,37 @@ public class Input {
     /** Фронты нажатия/отпускания ЛКМ — нужны UI (клик по кнопке, захват слайдера). */
     private boolean leftPressedEdge, leftReleasedEdge;
 
+    /**
+     * Без "detectable autorepeat" (типично для X11/Linux) удержание клавиши
+     * шлёт не один keyPressed на всё время удержания, а пары release+press на
+     * каждый тик автоповтора ОС. Из-за этого одноразовые действия (Q, E, F...)
+     * срабатывали то через раз, то по два подряд — выглядело как случайность.
+     * Лечим дебаунсом: настоящее отпускание применяем не сразу, а с небольшой
+     * задержкой; если за это время прилетает новый press того же кода —
+     * значит, клавишу всё это время держали, а не нажали заново.
+     */
+    private static final int RELEASE_DEBOUNCE_MS = 40;
+    private final Map<Integer, Timer> pendingReleases = new HashMap<>();
+
     synchronized void keyDown(int code) {
+        Timer pending = pendingReleases.remove(code);
+        if (pending != null) {
+            pending.stop();
+            return;   // автоповтор ОС поверх уже зажатой клавиши, а не новое нажатие
+        }
         if (down.add(code)) pressed.add(code);
     }
 
     synchronized void keyUp(int code) {
-        down.remove(code);
+        Timer t = new Timer(RELEASE_DEBOUNCE_MS, e -> {
+            synchronized (Input.this) {
+                down.remove(code);
+                pendingReleases.remove(code);
+            }
+        });
+        t.setRepeats(false);
+        pendingReleases.put(code, t);
+        t.start();
     }
 
     synchronized void mouseMoved(int x, int y) {
