@@ -26,8 +26,10 @@ public class SmokeTest {
         Field f = new Field();
         new WorldGenerator(Constants.DEFAULT_SEED).generateInto(f);
 
-        // 1. копание вниз от поверхности
-        Player p = new Player(Constants.WORLD_W / 2, Constants.SURFACE_Y - 2);
+        // 1. копание вниз от поверхности.
+        // Начинаем в стороне от базы: вокруг спавна копать запрещено (SPAWN_PROTECT_RADIUS)
+        int digX = Constants.WORLD_W / 2 + (int) Constants.SPAWN_PROTECT_RADIUS + 6;
+        Player p = new Player(digX, Constants.SURFACE_Y - 2);
         // цель — не жёсткое число, а глубина, докуда достаёт СТАРТОВАЯ кирка:
         // ниже слоя 2 нужен уже медный тир, а границы слоёв ещё и волнистые
         int digTarget = Constants.LAYER_2_END - Constants.LAYER_BOUNDARY_WAVE - 4;

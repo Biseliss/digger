@@ -31,6 +31,14 @@ public class Audio {
     private static final int CHUNK_FRAMES = 512;         // ~12 мс при 44.1 кГц
 
     /**
+     * Насколько конец зацикленного трека наезжает на его начало.
+     *
+     * Без наложения на стыке слышна пауза: у трека подрезаны края, и петля
+     * «дышит» тишиной. Здесь хвост плавно гаснет, а начало под ним нарастает.
+     */
+    private static final double LOOP_CROSSFADE_SECONDS = 0.35;
+
+    /**
      * Ухо слышит примерно как амплитуда^0.6, поэтому «честная» амплитуда,
      * равная положению ползунка, звучит совсем не как половина на середине.
      * Возводя положение в 1/0.6, компенсируем это: воспринимаемая громкость
@@ -124,15 +132,17 @@ public class Audio {
 
             int chunkBytes = CHUNK_FRAMES * TARGET.getFrameSize();
             byte[] chunk = new byte[chunkBytes];
+            int crossfade = crossfadeBytes();
             int pos = 0;
 
             while (!stopRequested) {
                 if (pos >= pcm.length) {
                     if (!looping) break;
-                    pos = 0;
+                    // начало трека уже прозвучало внутри кроссфейда — не повторяем его
+                    pos = crossfade;
                 }
                 int len = Math.min(chunkBytes, pcm.length - pos);
-                applyVolume(pcm, pos, chunk, len);
+                fillChunk(chunk, len, pos, crossfade);
                 line.write(chunk, 0, len);
                 pos += len;
             }
@@ -149,22 +159,40 @@ public class Audio {
         }
     }
 
+    /** Длина зоны наложения в байтах, выровненная по фрейму. */
+    private int crossfadeBytes() {
+        if (pcm == null) return 0;
+        int frame = TARGET.getFrameSize();
+        int bytes = (int) (frame * TARGET.getFrameRate() * LOOP_CROSSFADE_SECONDS);
+        bytes -= bytes % frame;
+        // на очень коротких звуках наложение бессмысленно
+        return Math.min(bytes, pcm.length / 4);
+    }
+
     /**
-     * Копирует кусок PCM, домножая 16-битные сэмплы на громкость.
+     * Готовит кусок для линии: громкость плюс, если это зацикленный трек,
+     * наложение хвоста на начало.
      *
      * Амплитуда плавно доводится до целевой внутри куска: резкий скачок
      * усиления даёт щелчок, а так переход растянут на ~12 мс и не слышен.
      */
-    private void applyVolume(byte[] src, int offset, byte[] dst, int len) {
+    private void fillChunk(byte[] dst, int len, int pos, int crossfade) {
         float target = amplitude();
         int samples = len / 2;
+        int tailStart = pcm.length - crossfade;
 
         for (int i = 0; i < samples; i++) {
             float mix = appliedAmplitude + (target - appliedAmplitude) * (i / (float) samples);
 
-            int lo = src[offset + i * 2] & 0xFF;
-            int hi = src[offset + i * 2 + 1];
-            int sample = (hi << 8) | lo;
+            int index = pos + i * 2;
+            int sample = readSample(index);
+
+            // хвост гаснет, начало под ним нарастает — стык петли без тишины
+            if (looping && crossfade > 0 && index >= tailStart) {
+                double t = (index - tailStart) / (double) crossfade;
+                int head = readSample(index - tailStart);
+                sample = (int) (sample * (1 - t) + head * t);
+            }
 
             int scaled = Math.round(sample * mix);
             if (scaled > Short.MAX_VALUE) scaled = Short.MAX_VALUE;
@@ -174,6 +202,12 @@ public class Audio {
             dst[i * 2 + 1] = (byte) ((scaled >> 8) & 0xFF);
         }
         appliedAmplitude = target;
+    }
+
+    /** 16-битный сэмпл little-endian по байтовому смещению. */
+    private int readSample(int index) {
+        if (index < 0 || index + 1 >= pcm.length) return 0;
+        return (pcm[index + 1] << 8) | (pcm[index] & 0xFF);
     }
 
     /** Положение ползунка -> амплитуда по перцептивной кривой. */

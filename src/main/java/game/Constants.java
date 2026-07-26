@@ -13,7 +13,7 @@ public final class Constants {
     public static final int PLAYER_W = 8;      // спрайт игрока 8x16 (1:2)
     public static final int PLAYER_H = 16;
     public static final int HITBOX_W = 6;      // хитбокс чуть меньше спрайта
-    public static final int HITBOX_H = 15;
+    public static final int HITBOX_H = 12;
     public static final int ICON = 16;         // иконки HUD/магазина 16x16
 
     public static final int WINDOW_W = 960;
@@ -44,7 +44,7 @@ public final class Constants {
     public static final double MOVE_SPEED = 52;                       // px/сек (мировые пиксели)
     public static final double GRAVITY = 260;
     public static final double JUMP_SPEED = 105;
-    public static final double MAX_FALL_SPEED = 300;
+    public static final double MAX_FALL_SPEED = 170;                  // терминальная скорость, px/сек
 
     public static final double DIG_REACH = 5;                         // радиус досягаемости копания, тайлы
 
@@ -96,4 +96,20 @@ public final class Constants {
 
     // --- Экономика (п.9) ---
     public static final double INTERACT_RANGE = 2.5;                  // тайлы, «подойти + E»
+
+    /**
+     * Вокруг спавна копать нельзя: иначе можно снести землю под базой и
+     * возвращаться из шахты прямо в дыру (или застрять в ней после респавна).
+     */
+    public static final double SPAWN_PROTECT_RADIUS = 2;             // тайлы
+
+    // --- Эффекты ---
+    public static final double PARTICLE_LIFETIME = 0.6;               // сек, сколько живёт осколок
+    public static final int PARTICLES_PER_BLOCK = 9;
+    public static final double PARTICLE_GRAVITY = 220;
+    public static final double BLOCK_SHAKE_AMPLITUDE = 1.2;           // px, дрожь блока под киркой
+    public static final double SCREEN_SHAKE_TIME = 0.35;              // сек, тряска от урона
+    public static final double SCREEN_SHAKE_AMPLITUDE = 5;            // px на полной силе
+    public static final double DIG_SOUND_COOLDOWN = 0.12;             // сек между звуками поломки
+    public static final int BREAK_STAGES = 4;                         // кадров трещин в textures/break
 }

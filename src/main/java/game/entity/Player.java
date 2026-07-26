@@ -163,16 +163,20 @@ public class Player {
      * тайл на большом dt (после фриза), и не нужна честная развёртка коллизий.
      */
     private void moveAxis(Field field, double dx, double dy) {
-        double remaining = Math.hypot(dx, dy);
-        if (remaining == 0) return;
-        double stepX = dx == 0 ? 0 : Math.signum(dx) * Math.min(Math.abs(dx), 2);
-        double stepY = dy == 0 ? 0 : Math.signum(dy) * Math.min(Math.abs(dy), 2);
-        double doneX = 0;
-        double doneY = 0;
+        // Двигаемся по одной оси, поэтому работаем с одной величиной:
+        // так последний шаг легко обрезать по остатку. Раньше шаг всегда был
+        // целые 2 px, и на дробном остатке игрок проскакивал дальше, чем
+        // просили — падение выходило заметно быстрее терминальной скорости.
+        double total = dx != 0 ? dx : dy;
+        if (total == 0) return;
 
-        while (Math.abs(doneX) < Math.abs(dx) || Math.abs(doneY) < Math.abs(dy)) {
-            double nx = x + stepX;
-            double ny = y + stepY;
+        double sign = Math.signum(total);
+        double remaining = Math.abs(total);
+
+        while (remaining > 0) {
+            double step = Math.min(MAX_STEP, remaining) * sign;
+            double nx = dx != 0 ? x + step : x;
+            double ny = dy != 0 ? y + step : y;
 
             if (collides(field, nx, ny)) {
                 if (dy > 0) {
@@ -186,16 +190,14 @@ public class Player {
 
             x = nx;
             y = ny;
-            doneX += stepX;
-            doneY += stepY;
-
-            if (stepX != 0 && Math.abs(doneX) >= Math.abs(dx)) break;
-            if (stepY != 0 && Math.abs(doneY) >= Math.abs(dy)) break;
-            if (stepX == 0 && stepY == 0) break;
+            remaining -= Math.abs(step);
         }
 
         if (dy > 0) onGround = false;   // летим вниз и ни во что не упёрлись
     }
+
+    /** Шаг разбиения движения: меньше тайла, иначе можно проскочить сквозь стену. */
+    private static final double MAX_STEP = 2;
 
     private void onLanded() {
         if (!onGround) {
@@ -312,6 +314,13 @@ public class Player {
             return List.of();
         }
 
+        // база неприкосновенна: под ней нельзя рыть, иначе она обрушится
+        // и после респавна игрок оказывался бы в собственной яме
+        if (field.isSpawnProtected(tx, ty)) {
+            resetDigTarget(field);
+            return List.of();
+        }
+
         Block block = field.getBlock(tx, ty);
         if (block.isAir() || !block.getType().breakable) {
             resetDigTarget(field);
@@ -336,6 +345,13 @@ public class Player {
             return broken;
         }
         return List.of();
+    }
+
+    public int getDigTargetX() { return digTargetX; }
+    public int getDigTargetY() { return digTargetY; }
+
+    public boolean hasDigTarget() {
+        return digTargetX != Integer.MIN_VALUE;
     }
 
     /** Отпустили кнопку или увели курсор — недокопанный блок «залечивается». */
@@ -438,10 +454,13 @@ public class Player {
 
     public void draw(Graphics2D g, double camX, double camY) {
         int scale = Constants.SCALE;
-        // спрайт чуть шире хитбокса — центруем по нему
+        // спрайт шире хитбокса — центруем по горизонтали
         double drawX = x - (Constants.PLAYER_W - Constants.HITBOX_W) / 2.0;
+        // ...а по вертикали ставим НА НОГИ: спрайт выше хитбокса, и если равнять
+        // по верху, лишняя высота уходит под пол и игрок в нём тонет
+        double drawY = y + Constants.HITBOX_H - Constants.PLAYER_H;
         int sx = (int) Math.round((drawX - camX) * scale);
-        int sy = (int) Math.round((y - camY) * scale);
+        int sy = (int) Math.round((drawY - camY) * scale);
         int w = Constants.PLAYER_W * scale;
         int h = Constants.PLAYER_H * scale;
 

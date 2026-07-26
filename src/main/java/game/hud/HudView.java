@@ -97,11 +97,30 @@ public class HudView extends UIObject {
         for (OreType ore : OreType.values()) {
             int count = p.getOreCount(ore);
             int right = width - 12;
+            boolean full = count >= limit;
+
             g.drawImage(Textures.get(ore.icon), right - 78, y, 16, 16, null);
-            g.setColor(count >= limit ? ORE_FULL : Color.WHITE);
+            g.setColor(full ? ORE_FULL : Color.WHITE);
             g.drawString(count + "/" + limit, right - 56, y + 13);
+
+            // переполнение показываем значком у самого слота, а не всплывающей
+            // строкой посреди экрана — иначе она лезет поверх игры на каждый удар
+            if (full) drawFullMark(g, right - 16, y);
+
             y += 20;
         }
+    }
+
+    /** Восклицательный знак в кружке: «сюда больше не влезет». */
+    private void drawFullMark(Graphics2D g, int x, int y) {
+        int size = 14;
+        int cx = x + size / 2;
+
+        g.setColor(ORE_FULL);
+        g.fillOval(x, y + 1, size, size);
+        g.setColor(new Color(30, 20, 10));
+        g.fillRect(cx - 1, y + 4, 2, 6);      // палочка
+        g.fillRect(cx - 1, y + 12, 2, 2);     // точка
     }
 
     /** Подсказка рядом с игроком: NPC, лестница, товар торговца. */

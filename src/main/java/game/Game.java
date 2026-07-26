@@ -58,6 +58,16 @@ public class Game implements Scene {
     /** Счётчик кадров для отметки «блок виден прямо сейчас» (п.7). */
     private int visibilityFrame;
 
+    private final game.render.Particles particles = new game.render.Particles();
+    /** Кулдаун, чтобы десяток блоков подряд не превращался в треск. */
+    private double digSoundCooldown;
+
+    /** Тряска экрана от урона: сколько ещё трясти и насколько сильно. */
+    private double shakeTimer;
+    private double shakeStrength;
+    /** HP на прошлом кадре — по нему замечаем, что игрока задело. */
+    private int lastHealth = Constants.PLAYER_MAX_HP;
+
     private int fps = 0;
     private int frames = 0;
     private long lastTime = System.currentTimeMillis();
@@ -155,6 +165,7 @@ public class Game implements Scene {
         player.tick(dt, field, left, right, up, down);
         field.tick(dt, player);
         tickDynamites(dt);
+        tickEffects(dt);
 
         // Видимость считаем ДО копания: копать можно только то, что видно
         // сейчас, а волна должна учитывать уже случившиеся за кадр изменения.
@@ -190,6 +201,29 @@ public class Game implements Scene {
         }
     }
 
+    /** Осколки, кулдаун звука и тряска экрана — всё, что живёт «поверх» логики. */
+    private void tickEffects(double dt) {
+        particles.tick(dt);
+
+        if (digSoundCooldown > 0) digSoundCooldown -= dt;
+
+        // урон замечаем по падению HP — не надо тянуть колбэки через весь Player
+        int hp = player.getHealth();
+        if (hp < lastHealth) {
+            double severity = Math.min(1.0, (lastHealth - hp) / 40.0);
+            shake(Math.max(0.35, severity));
+        }
+        lastHealth = hp;
+
+        if (shakeTimer > 0) shakeTimer -= dt;
+    }
+
+    /** @param strength 0..1 — насколько сильно тряхнуть экран. */
+    private void shake(double strength) {
+        shakeTimer = Constants.SCREEN_SHAKE_TIME;
+        shakeStrength = Math.max(shakeStrength, strength);
+    }
+
     private void tickDynamites(double dt) {
         for (Iterator<Dynamite> it = dynamites.iterator(); it.hasNext(); ) {
             Dynamite d = it.next();
@@ -209,17 +243,29 @@ public class Game implements Scene {
 
         // у лестницы за раз осыпается вся колонна, поэтому список
         for (Block broken : player.dig(field, tx, ty, dt, visibilityFrame)) {
+            particles.burst(broken.worldX, broken.worldY, broken.getType());
+
             if (broken.getType() == BlockType.LADDER) {
                 // снятая лестница возвращается в инвентарь, как в Minecraft
-                if (!player.addUtility(UtilityType.LADDER)) showMessage("Ladder stack is full", 1.5);
+                player.addUtility(UtilityType.LADDER);
                 continue;
             }
             OreType ore = broken.drop();
-            if (ore != null && !player.addOre(ore)) {
-                showMessage("Can't carry more " + ore.displayName, 1.5);
-            }
-            sfx_dig.play();
+            if (ore != null) player.addOre(ore);   // не влезло — просто пропадает, о переполнении говорит HUD
+
+            playDigSound();
         }
+    }
+
+    /**
+     * Звук поломки с кулдауном: динамит сносит десятки блоков разом, и без
+     * ограничения они сливались бы в треск. Заодно звук перестал бы попадать
+     * в такт, потому что каждый следующий обрывал предыдущий.
+     */
+    private void playDigSound() {
+        if (digSoundCooldown > 0) return;
+        digSoundCooldown = Constants.DIG_SOUND_COOLDOWN;
+        sfx_dig.play();
     }
 
     private void handleInteractions() {
@@ -328,15 +374,33 @@ public class Game implements Scene {
         int viewH = camera.getViewHeightPx() * Constants.SCALE;
 
         drawSky(g, viewW, viewH);
+
+        // тряска сдвигает только мир: HUD дёргаться вместе с ним не должен
+        double shakeX = 0;
+        double shakeY = 0;
+        if (shakeTimer > 0) {
+            double fade = shakeTimer / Constants.SCREEN_SHAKE_TIME;
+            double amp = Constants.SCREEN_SHAKE_AMPLITUDE * shakeStrength * fade;
+            shakeX = (Math.random() - 0.5) * 2 * amp;
+            shakeY = (Math.random() - 0.5) * 2 * amp;
+        } else {
+            shakeStrength = 0;
+        }
+        g.translate(shakeX, shakeY);
+
         drawBase(g);
         field.draw(g, camera.getX(), camera.getY(), viewW, viewH);
+        drawBreakingBlock(g);
 
         for (Dynamite d : dynamites) d.draw(g, camera.getX(), camera.getY());
         for (NpcPoint npc : npcs) npc.draw(g, camera.getX(), camera.getY());
         player.draw(g, camera.getX(), camera.getY());
+        particles.draw(g, camera.getX(), camera.getY());
 
         drawDigTarget(g);
         drawDarkness(g, viewW, viewH);
+
+        g.translate(-shakeX, -shakeY);
 
         hud.draw(new DrawCtx(g, 0, 0));
 
@@ -355,6 +419,8 @@ public class Game implements Scene {
     }
 
     private static final Color SKY = new Color(96, 150, 200);
+    /** Затемнение подложки под дрожащим блоком — она «уже почти дыра». */
+    private static final Color BREAK_BACKDROP = new Color(0, 0, 0, 165);
     private static final Color DIG_OUTLINE = new Color(255, 255, 255, 110);
 
     private void drawSky(Graphics2D g, int viewW, int viewH) {
@@ -371,6 +437,51 @@ public class Game implements Scene {
         int x = (int) camera.worldToScreenX((spawnTileX - 11) * Constants.TILE);
         int y = (int) camera.worldToScreenY((Constants.SURFACE_Y - 6) * Constants.TILE);
         g.drawImage(Textures.get("shop"), x, y, w * scale, h * scale, null);
+    }
+
+    /**
+     * Блок, который сейчас копают: дрожит и обрастает трещинами.
+     *
+     * Рисуется поверх кэша чанка, а исходное место сначала закрывается тем,
+     * что окажется под блоком после поломки — иначе смещённая копия двоилась
+     * бы с оригиналом, вмороженным в кэш.
+     */
+    private void drawBreakingBlock(Graphics2D g) {
+        if (!player.hasDigTarget()) return;
+
+        int tx = player.getDigTargetX();
+        int ty = player.getDigTargetY();
+        Block block = field.getBlock(tx, ty);
+        double progress = block.digProgress();
+        if (progress <= 0 || block.isAir()) return;
+
+        int scale = Constants.SCALE;
+        int size = Constants.TILE * scale;
+        int sx = (int) camera.worldToScreenX(tx * Constants.TILE);
+        int sy = (int) camera.worldToScreenY(ty * Constants.TILE);
+
+        // подложка: фон, если тут уже копали, иначе затемнённая та же порода
+        BlockType bg = field.getBackground(tx, ty);
+        g.drawImage(Textures.get(bg != null ? bg.texture : block.getType().texture),
+                sx, sy, size, size, null);
+        g.setColor(BREAK_BACKDROP);
+        g.fillRect(sx, sy, size, size);
+
+        // чем ближе к развалу, тем сильнее дрожь
+        double amp = Constants.BLOCK_SHAKE_AMPLITUDE * progress * scale;
+        int ox = (int) Math.round((Math.random() - 0.5) * 2 * amp);
+        int oy = (int) Math.round((Math.random() - 0.5) * 2 * amp);
+
+        int rot = block.getType().isRotatable() ? block.getRotation() : 0;
+        g.drawImage(Textures.get(block.getType().texture, rot), sx + ox, sy + oy, size, size, null);
+        if (block.getOre() != null) {
+            g.drawImage(Textures.get(block.getOre().overlay, rot), sx + ox, sy + oy, size, size, null);
+        }
+
+        // трещины: стадия по прогрессу
+        int stages = Constants.BREAK_STAGES;
+        int stage = Math.min(stages, Math.max(1, (int) Math.ceil(progress * stages)));
+        g.drawImage(Textures.get("break/break" + stage), sx + ox, sy + oy, size, size, null);
     }
 
     private void drawDigTarget(Graphics2D g) {

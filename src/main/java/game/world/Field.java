@@ -282,6 +282,17 @@ public class Field {
 
     // --- лестницы (п.8): теперь обычный блок, отдельных сущностей нет ---
 
+    /**
+     * Зона вокруг точки спавна, где копать запрещено: под базой должна
+     * оставаться твёрдая земля, а игрок после респавна — не проваливаться
+     * в собственную яму.
+     */
+    public boolean isSpawnProtected(int tx, int ty) {
+        double dx = tx + 0.5 - (Constants.WORLD_W / 2.0);
+        double dy = ty + 0.5 - Constants.SURFACE_Y;
+        return Math.sqrt(dx * dx + dy * dy) <= Constants.SPAWN_PROTECT_RADIUS;
+    }
+
     public boolean isLadder(int tx, int ty) {
         return getBlock(tx, ty).getType() == BlockType.LADDER;
     }

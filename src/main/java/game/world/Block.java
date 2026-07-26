@@ -106,7 +106,18 @@ public abstract class Block {
     }
 
     public void resetDurability() {
-        this.durability = type.durability + (ore != null ? ore.extraDurability : 0);
+        this.durability = maxDurability();
+    }
+
+    public int maxDurability() {
+        return type.durability + (ore != null ? ore.extraDurability : 0);
+    }
+
+    /** 0 — целый, 1 — вот-вот развалится. По нему рисуются трещины и дрожь. */
+    public double digProgress() {
+        int max = maxDurability();
+        if (max <= 0) return 0;
+        return Math.max(0, Math.min(1, 1.0 - durability / (double) max));
     }
 
     /** Возвращает true, если блок «докопан» и его пора ломать. */
