@@ -127,7 +127,7 @@ public class GameWindow {
             public void keyPressed(KeyEvent e) {
                 // Tab, а не F11: F-клавиши на части клавиатур (особенно
                 // ноутбучных) требуют Fn и легко промахиваются.
-                if (e.getKeyCode() == KeyEvent.VK_TAB) {
+                if (e.getKeyCode() == KeyEvent.VK_TAB || e.getKeyCode() == KeyEvent.VK_F11) {
                     toggleFullscreen();
                     return;
                 }
