@@ -26,15 +26,17 @@ public final class Constants {
     public static final int WORLD_W = CHUNK_W * WORLD_CHUNKS_X;       // 192 тайла
     public static final int SURFACE_Y = 24;                           // уровень поверхности (выше — небо и база)
 
-    // Глубины границ слоёв, в тайлах от поверхности (п.4)
-    public static final int LAYER_1_END = 20;
-    public static final int LAYER_2_END = 45;
-    public static final int LAYER_3_END = 75;
-    public static final int LAYER_4_END = 110;
-    public static final int CORE_ROOM_H = 20;                         // финальная комната (п.6)
+    // Глубины границ слоёв, в тайлах от поверхности (п.4).
+    // Уменьшены под демо-темп: полный забег укладывается в ~5 мин спидрана
+    // и ~10 без спешки, а не в полноценную длинную игру.
+    public static final int LAYER_1_END = 9;
+    public static final int LAYER_2_END = 20;
+    public static final int LAYER_3_END = 33;
+    public static final int LAYER_4_END = 48;
+    public static final int CORE_ROOM_H = 16;                         // финальная комната (п.6)
     public static final int WORLD_H = SURFACE_Y + LAYER_4_END + CORE_ROOM_H + 4;
 
-    public static final int LAYER_BOUNDARY_WAVE = 6;                  // амплитуда «дуг» на границах слоёв
+    public static final int LAYER_BOUNDARY_WAVE = 3;                  // амплитуда «дуг» на границах слоёв (тоньше слои — меньше волна)
 
     // --- Финальная локация за вратами (п.6) ---
     // Вход в последний слой (CORE) больше не докапывают вручную: стоит игроку
@@ -57,7 +59,7 @@ public final class Constants {
     public static final int HUD_HP_DIVISOR = 10;                      // в HUD показываем /10 → 10 сердец
     public static final int START_MONEY = 50;
 
-    public static final double MOVE_SPEED = 52;                       // px/сек (мировые пиксели)
+    public static final double MOVE_SPEED = 62;                       // px/сек (мировые пиксели), чуть быстрее для демо-темпа
     public static final double GRAVITY = 260;
     public static final double JUMP_SPEED = 105;
     public static final double MAX_FALL_SPEED = 170;                  // терминальная скорость, px/сек
@@ -85,7 +87,11 @@ public final class Constants {
     // --- Лестницы (п.8): обычный ставящийся блок, как в Minecraft ---
     public static final int LADDER_CARRY_LIMIT = 32;      // размер стака
     public static final int LADDER_PURCHASE_AMOUNT = 8;   // сколько даёт одна покупка
-    public static final double CLIMB_SPEED = 34;          // px/сек вверх-вниз по лестнице
+    public static final double CLIMB_SPEED = 40;          // px/сек вверх-вниз по лестнице
+
+    // --- Мостики: то же самое, но горизонтально (доп.) ---
+    public static final int BRIDGE_CARRY_LIMIT = 32;
+    public static final int BRIDGE_PURCHASE_AMOUNT = 8;
 
     // --- Свет (п.7) ---
     public static final double[] LIGHT_RADIUS_BY_LAYER = {8, 6, 5, 4, 3};
@@ -94,15 +100,15 @@ public final class Constants {
 
     // --- Инструмент (п.3) ---
     public static final int MAX_TOOL_TIER = 4;                        // 0 дерево, 1 камень, 2 медь, 3 железо, 4 алмаз
-    public static final int[] TOOL_UPGRADE_PRICE = {0, 50, 150, 400, 1000};
+    public static final int[] TOOL_UPGRADE_PRICE = {0, 40, 100, 250, 600};
     public static final String[] TOOL_NAMES = {"Wooden", "Stone", "Copper", "Iron", "Diamond"};
     /** Скорость копания по тиру: камень и медь — один слой, но медь быстрее (п.3). */
-    public static final double[] DIG_SPEED = {1.0, 1.6, 2.4, 3.4, 5.0};
+    public static final double[] DIG_SPEED = {1.2, 2.0, 3.0, 4.2, 6.0};
 
     // --- Генерация (п.5) ---
     public static final long DEFAULT_SEED = 1337L;
-    public static final int CAVE_MIN_DEPTH = 12;                      // не роем пещеры у самой поверхности
-    public static final int CAVE_WORMS = 90;
+    public static final int CAVE_MIN_DEPTH = 5;                       // не роем пещеры у самой поверхности
+    public static final int CAVE_WORMS = 36;                         // меньше, чем в полноразмерном мире — слои теперь тоньше
     public static final double GRAVEL_PATCH_CHANCE = 0.0025;          // на тайл-кандидат
     public static final double LAVA_SEED_CHANCE = 0.10;               // на подходящий тайл (п.5)
     public static final int LAVA_MIN_DEPTH = LAYER_3_END;             // лава от слоя 4 и ниже
@@ -111,10 +117,15 @@ public final class Constants {
     public static final double INTERACT_RANGE = 2.5;                  // тайлы, «подойти + E»
 
     /**
-     * Вокруг спавна копать нельзя: иначе можно снести землю под базой и
-     * возвращаться из шахты прямо в дыру (или застрять в ней после респавна).
+     * База (спавн + все NPC) защищена не проверкой радиуса при копании, а
+     * буквально бедроком в этой прямоугольной зоне (WorldGenerator) — раньше
+     * маленький радиус-2 защищал только сам спавн, а НПС в стороне (они
+     * стоят на ±3..±8 тайлов) можно было раскопать и подойти к ним стало
+     * нечем. Бедрок и не копается в принципе, и сразу видно, что это не
+     * обычная порода.
      */
-    public static final double SPAWN_PROTECT_RADIUS = 2;             // тайлы
+    public static final int BASE_PROTECT_HALF_WIDTH = 13;             // тайлы влево/вправо от центра спавна
+    public static final int BASE_PROTECT_DEPTH = 5;                   // тайлы вниз от поверхности
 
     // --- Эффекты ---
     public static final double PARTICLE_LIFETIME = 0.6;               // сек, сколько живёт осколок
@@ -126,7 +137,7 @@ public final class Constants {
     public static final int BREAK_STAGES = 4;                         // кадров трещин в textures/break
 
     // --- Реверб музыки по глубине (п.5) ---
-    public static final double MUSIC_REVERB_MAX_DEPTH = 150;          // глубина, на которой реверб уже максимальный
+    public static final double MUSIC_REVERB_MAX_DEPTH = LAYER_4_END;  // глубина, на которой реверб уже максимальный
     public static final float MUSIC_REVERB_MAX_WET = 0.55f;
 
     // --- Звук шагов ---

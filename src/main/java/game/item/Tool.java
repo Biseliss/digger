@@ -8,6 +8,16 @@ import game.Constants;
  * инструментов потом было правкой в одном месте, а не рефактором.
  */
 public class Tool {
+    /**
+     * Апгрейд требует не только денег, но и материала — того же типа руды,
+     * что и следующий тир (стальная логика: без камня в кармане каменную
+     * кирку не купить, даже с деньгами). Числа заведомо ниже лимита переноски
+     * ПРЕДЫДУЩЕГО тира (см. OreType.carryLimitByTier), иначе требование было
+     * бы физически невыполнимым — софт-лок.
+     */
+    private static final OreType[] UPGRADE_MATERIAL = {null, OreType.STONE, OreType.COPPER, OreType.IRON, OreType.DIAMOND};
+    private static final int[] UPGRADE_MATERIAL_AMOUNT = {0, 8, 8, 8, 4};
+
     private int level; // 0 дерево .. 4 алмаз
 
     public Tool(int level) {
@@ -46,6 +56,16 @@ public class Tool {
 
     public String getNextName() {
         return isMaxed() ? "-" : Constants.TOOL_NAMES[level + 1];
+    }
+
+    /** Материал, нужный для следующего апгрейда — null, если кирка уже максимальная. */
+    public OreType getUpgradeMaterial() {
+        return isMaxed() ? null : UPGRADE_MATERIAL[level + 1];
+    }
+
+    /** Сколько единиц материала нужно на руках (не считая уже потраченного на продажу). */
+    public int getUpgradeMaterialAmount() {
+        return isMaxed() ? 0 : UPGRADE_MATERIAL_AMOUNT[level + 1];
     }
 
     /** Иконка кирки, которую можно купить следующей — для витрины у кузнеца (п.4, доп.). */

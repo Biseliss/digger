@@ -40,6 +40,7 @@ public class UtilityShopNpc extends NpcPoint {
     }
 
     /** direction = +1/-1, зацикленно. */
+    @Override
     public void cycle(int direction) {
         if (offers.isEmpty()) return;
         selectedIndex = Math.floorMod(selectedIndex + direction, offers.size());
@@ -63,16 +64,23 @@ public class UtilityShopNpc extends NpcPoint {
     public boolean interact(Player p) {
         UtilityOffer offer = selected();
         UtilityType type = offer.type();
-        if (type.passive && p.getUtility(type) > 0) return false;   // второй факел ни к чему
+        if (type.passive && p.getUtility(type) > 0) {
+            setError("Already own a " + type.displayName.toLowerCase());
+            return false;
+        }
 
         if (p.isGodMode()) {
             return p.addUtility(type, type.purchaseAmount);
         }
-        if (p.getMoney() < offer.price()) return false;
+        if (p.getMoney() < offer.price()) {
+            setError("Not enough money (need $" + offer.price() + ")");
+            return false;
+        }
         if (p.addUtility(type, type.purchaseAmount)) {
             p.spendMoney(offer.price());
             return true;
         }
+        setError(type.displayName + " stock is already full");
         return false;
     }
 }

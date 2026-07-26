@@ -13,7 +13,10 @@ public enum UtilityType {
     DYNAMITE("Dynamite", 40, "icon_dynamite", false, 5, 1),
     /** Лестницы продаются пачкой и стакаются — это расходный стройматериал (п.8). */
     LADDER("Ladder", 60, "icon_ladder", false,
-            game.Constants.LADDER_CARRY_LIMIT, game.Constants.LADDER_PURCHASE_AMOUNT);
+            game.Constants.LADDER_CARRY_LIMIT, game.Constants.LADDER_PURCHASE_AMOUNT),
+    /** Мостик — то же самое, что лестница, только кладётся горизонтально (доп.). */
+    BRIDGE("Bridge", 60, "icon_bridge", false,
+            game.Constants.BRIDGE_CARRY_LIMIT, game.Constants.BRIDGE_PURCHASE_AMOUNT);
 
     public final String displayName;
     public final int price;

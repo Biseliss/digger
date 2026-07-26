@@ -41,7 +41,6 @@ public class Game implements Scene {
     private final Screen hud;
 
     private final List<NpcPoint> npcs = new ArrayList<>();
-    private final UtilityShopNpc utilityShop;
     private final List<Dynamite> dynamites = new ArrayList<>();
 
     private final int spawnTileX = Constants.WORLD_W / 2;
@@ -79,6 +78,9 @@ public class Game implements Scene {
     /** Пауза: игровой тик не выполняется, поверх кадра рисуется свой экран. */
     private boolean paused;
     private final Screen pauseScreen;
+    /** Гайд по утилитам поверх паузы (фидбек игроков) — своя сцена не заводится, состояние забега не теряется. */
+    private boolean showGuide;
+    private final Screen guideScreen;
 
     /** Счётчик кадров для отметки «блок виден прямо сейчас» (п.7). */
     private int visibilityFrame;
@@ -124,8 +126,7 @@ public class Game implements Scene {
         // база: три точки взаимодействия, «подойти + E» (п.9)
         npcs.add(new OreBuyerNpc(spawnTileX - 8, Constants.SURFACE_Y - 2));
         npcs.add(new ToolsmithNpc(spawnTileX - 3, Constants.SURFACE_Y - 2));
-        utilityShop = new UtilityShopNpc(spawnTileX + 3, Constants.SURFACE_Y - 2);
-        npcs.add(utilityShop);
+        npcs.add(new UtilityShopNpc(spawnTileX + 3, Constants.SURFACE_Y - 2));
 
         // финальная комната (п.6): сундук у правого края, подальше от gate-main слева
         int chestX = Constants.CORE_ROOM_RIGHT - 3;
@@ -160,6 +161,7 @@ public class Game implements Scene {
 
         // строго после аудио: ползунки читают стартовую громкость из Audio
         this.pauseScreen = buildPauseScreen(screenW, screenH);
+        this.guideScreen = GuideScreen.build(screenW, screenH, () -> showGuide = false);
     }
 
     /**
@@ -189,14 +191,20 @@ public class Game implements Scene {
             AppSettings.sfxVolume = (float) v;
         }));
 
-        int buttonW = sliderW;
+        // три кнопки в ряд, а не стопкой — иначе панель пришлось бы снова растягивать
+        // вниз, а мест для этого уже впритык (фидбек: элементы и так заезжали друг на друга)
+        int gap = 12;
+        int buttonW = (sliderW - gap * 2) / 3;
         int buttonH = 36;
         int buttonY = view.buttonsY();
         screen.addChild(new ui.widgets.Button(sliderX, buttonY, buttonW, buttonH, "Main Menu", () -> {
             paused = false;
+            showGuide = false;
             if (onExitToMenu != null) onExitToMenu.run();
         }));
-        screen.addChild(new ui.widgets.Button(sliderX, buttonY + buttonH + 8, buttonW, buttonH, "Quit Game",
+        screen.addChild(new ui.widgets.Button(sliderX + (buttonW + gap), buttonY, buttonW, buttonH, "Guide",
+                () -> showGuide = true));
+        screen.addChild(new ui.widgets.Button(sliderX + (buttonW + gap) * 2, buttonY, buttonW, buttonH, "Quit Game",
                 () -> System.exit(0)));
 
         return screen;
@@ -207,6 +215,8 @@ public class Game implements Scene {
     public String getOverlayMessage() { return overlayMessage; }
     public boolean isWon() { return won; }
     public boolean isPaused() { return paused; }
+    /** Упал в финальную комнату — HUD переключает "Next Goal" на финальную цель (п.4). */
+    public boolean isEndgameTriggered() { return endgameTriggered; }
 
     // --- тик ---
 
@@ -222,7 +232,10 @@ public class Game implements Scene {
         }
 
         // Esc обрабатываем до всего остального — иначе с паузы не выйти
-        if (input.wasPressed(KeyEvent.VK_ESCAPE)) paused = !paused;
+        if (input.wasPressed(KeyEvent.VK_ESCAPE)) {
+            paused = !paused;
+            showGuide = false;   // возврат из паузы (или в неё) всегда начинается с обычного экрана
+        }
 
         // Временный тугл godmode (F1): без урона, бесплатные/бесконечные
         // покупки, любая кирка ломает блоки мгновенно.
@@ -301,13 +314,14 @@ public class Game implements Scene {
     private void tickPauseScreen() {
         int mx = input.getMouseX();
         int my = input.getMouseY();
+        Screen active = showGuide ? guideScreen : pauseScreen;
 
         if (input.wasLeftPressed()) {
-            pauseScreen.handleMousePressed(mx, my, java.awt.event.MouseEvent.BUTTON1);
+            active.handleMousePressed(mx, my, java.awt.event.MouseEvent.BUTTON1);
         } else if (input.wasLeftReleased()) {
-            pauseScreen.handleMouseReleased(mx, my, java.awt.event.MouseEvent.BUTTON1);
+            active.handleMouseReleased(mx, my, java.awt.event.MouseEvent.BUTTON1);
         } else if (input.isLeftDown()) {
-            pauseScreen.handleMouseDragged(mx, my);   // тянем ползунок громкости
+            active.handleMouseDragged(mx, my);   // тянем ползунок громкости
         }
     }
 
@@ -353,13 +367,16 @@ public class Game implements Scene {
         List<Block> broken = player.dig(field, tx, ty, dt, visibilityFrame);
         player.setDigging(player.hasDigTarget() || !broken.isEmpty());
 
-        // у лестницы за раз осыпается вся колонна, поэтому список
         for (Block b : broken) {
             particles.burst(b.worldX, b.worldY, b.getType());
 
             if (b.getType() == BlockType.LADDER) {
                 // снятая лестница возвращается в инвентарь, как в Minecraft
                 player.addUtility(UtilityType.LADDER);
+                continue;
+            }
+            if (b.getType() == BlockType.BRIDGE) {
+                player.addUtility(UtilityType.BRIDGE);
                 continue;
             }
             OreType ore = b.drop();
@@ -414,14 +431,6 @@ public class Game implements Scene {
     private void handleInteractions() {
         activePrompt = "";
 
-        // товар у торговца листается на Q и колесо мыши (стрелки заняты движением, п.9)
-        int wheel = input.consumeWheel();
-        boolean nearShop = utilityShop.isPlayerInRange(player);
-        if (nearShop) {
-            if (wheel != 0) utilityShop.cycle(Integer.signum(wheel));
-            if (input.wasPressed(KeyEvent.VK_Q)) utilityShop.cycle(1);
-        }
-
         NpcPoint activeNpc = null;
         for (NpcPoint npc : npcs) {
             if (npc.isPlayerInRange(player)) {
@@ -429,6 +438,15 @@ public class Game implements Scene {
                 activePrompt = npc.prompt(player);
                 break;
             }
+        }
+
+        // товар/режим листается на Q и колесо мыши у ЛЮБОГО NPC рядом, у кого
+        // это применимо (стрелки заняты движением, п.9) — раньше это работало
+        // только у торговца утилитами, у скупщика руды листать было нечего (доп.)
+        int wheel = input.consumeWheel();
+        if (activeNpc != null) {
+            if (wheel != 0) activeNpc.cycle(Integer.signum(wheel));
+            if (input.wasPressed(KeyEvent.VK_Q)) activeNpc.cycle(1);
         }
 
         if (activeNpc == null && player.isOnLadder()) {
@@ -448,10 +466,16 @@ public class Game implements Scene {
         }
 
         if (input.wasPressed(KeyEvent.VK_E) && activeNpc != null) {
-            if (activeNpc.interact(player)) playPurchaseEffect();
+            if (activeNpc.interact(player)) {
+                playPurchaseEffect();
+            } else {
+                String error = activeNpc.consumeError();
+                if (error != null) showMessage(error, 2.0);
+            }
         }
 
         if (input.wasPressed(KeyEvent.VK_F)) placeLadder();
+        if (input.wasPressed(KeyEvent.VK_B)) placeBridge();
         if (input.wasPressed(KeyEvent.VK_G)) placeDynamite();
         if (input.wasPressed(KeyEvent.VK_X)) respawn("Respawned - ore lost");
     }
@@ -480,6 +504,29 @@ public class Game implements Scene {
 
         player.consumeUtility(UtilityType.LADDER);
         field.placeLadder(tx, ty);
+    }
+
+    /** Мостик — то же самое, что лестница, только горизонтальная опора (доп.). */
+    private void placeBridge() {
+        if (!player.isGodMode() && player.getUtility(UtilityType.BRIDGE) <= 0) {
+            showMessage("No bridges left", 1.5);
+            return;
+        }
+
+        int tx = camera.screenToTileX(input.getMouseX());
+        int ty = camera.screenToTileY(input.getMouseY());
+
+        if (player.distanceToTile(tx + 0.5, ty + 0.5) > Constants.DIG_REACH) {
+            showMessage("Too far to place a bridge", 1.5);
+            return;
+        }
+        if (!field.canPlaceBridge(tx, ty)) {
+            showMessage("No room for a bridge", 1.5);
+            return;
+        }
+
+        player.consumeUtility(UtilityType.BRIDGE);
+        field.placeBridge(tx, ty);
     }
 
     private void placeDynamite() {
@@ -665,8 +712,8 @@ public class Game implements Scene {
 
         hud.draw(new DrawCtx(g, 0, 0));
 
-        // экран паузы — последним слоем, поверх мира и HUD
-        if (paused) pauseScreen.draw(new DrawCtx(g, 0, 0));
+        // экран паузы (или гайд поверх неё) — последним слоем, поверх мира и HUD
+        if (paused) (showGuide ? guideScreen : pauseScreen).draw(new DrawCtx(g, 0, 0));
 
         // затемнение финального падения — поверх вообще всего, включая HUD (п.6)
         if (endgameAlpha > 0) {

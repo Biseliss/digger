@@ -419,13 +419,6 @@ public class Player {
             return List.of();
         }
 
-        // база неприкосновенна: под ней нельзя рыть, иначе она обрушится
-        // и после респавна игрок оказывался бы в собственной яме
-        if (field.isSpawnProtected(tx, ty)) {
-            resetDigTarget(field);
-            return List.of();
-        }
-
         Block block = field.getBlock(tx, ty);
         if (block.isAir() || !block.getType().breakable) {
             resetDigTarget(field);
@@ -505,6 +498,12 @@ public class Player {
         return discoveredOres.contains(ore);
     }
 
+    /** Списывает материал за апгрейд кирки — вызывать только после проверки количества. */
+    public void consumeOre(OreType ore, int amount) {
+        int have = carriedOre.getOrDefault(ore, 0);
+        carriedOre.put(ore, Math.max(0, have - amount));
+    }
+
     /** Продажа всей руды разом (п.9). */
     public int sellAllOre() {
         int total = 0;
@@ -512,6 +511,16 @@ public class Player {
             total += e.getKey().price * e.getValue();
         }
         carriedOre.clear();
+        money += total;
+        return total;
+    }
+
+    /** Продажа одного конкретного типа руды — режим "Sell all Stone/Coal/..." у скупщика (доп.). */
+    public int sellOre(OreType ore) {
+        int count = carriedOre.getOrDefault(ore, 0);
+        if (count <= 0) return 0;
+        int total = ore.price * count;
+        carriedOre.put(ore, 0);
         money += total;
         return total;
     }

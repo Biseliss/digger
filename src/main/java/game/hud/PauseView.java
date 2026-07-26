@@ -32,6 +32,7 @@ public class PauseView extends UIObject {
             {"W / S", "climb up/down a ladder"},
             {"LMB", "dig the block under the cursor"},
             {"F", "place a ladder"},
+            {"B", "place a bridge"},
             {"G", "place dynamite"},
             {"E", "talk to shop NPCs"},
             {"Q / wheel", "cycle shop item"},

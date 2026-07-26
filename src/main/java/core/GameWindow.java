@@ -7,6 +7,7 @@ import java.awt.Canvas;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
@@ -37,6 +38,8 @@ public class GameWindow {
 
     /** Tab переключает полноэкранный режим независимо от игровой логики. */
     private boolean fullscreen;
+    /** Устройство, на котором сейчас реально висит exclusive fullscreen — нужно для корректного выхода. */
+    private GraphicsDevice fullscreenDevice;
 
     /**
      * setFullscreen выполняется на EDT (из KeyListener), а рендер — на своём
@@ -150,28 +153,36 @@ public class GameWindow {
     }
 
     /**
-     * Полноэкранный режим — безрамочное окно на весь экран, а не exclusive
-     * fullscreen API (device.setFullScreenWindow): с ним, если единственная
-     * клавиша выхода вдруг не сработает (как уже случилось с Tab), из игры
-     * не выбраться вообще ничем, вплоть до перезагрузки. Обычное окно
-     * (пусть и без рамки, во весь экран) по-прежнему сворачивается
-     * Alt+Tab/Cmd+Tab средствами самой ОС — это подстраховка, а не основной
-     * способ выхода. Пересоздаём peer'ы фрейма (dispose/show), поэтому
-     * buffer strategy в игровом цикле берём каждый раз заново.
+     * Настоящий exclusive fullscreen (device.setFullScreenWindow) — не
+     * безрамочное окно, растянутое на весь экран. У безрамочного окна на
+     * macOS поверх него всё равно остаются строка меню и Dock (ОС им
+     * специально резервирует место, растянутое окно их не перекрывает), и на
+     * части других систем та же история с панелью задач. Exclusive-режим —
+     * это единственный способ реально убрать всё постороннее с экрана.
+     *
+     * Раньше exclusive-режим тут уже стоял и был заменён на безрамочное окно
+     * из опасений: если единственная клавиша выхода (Tab) вдруг не сработает,
+     * из игры было не выбраться вообще ничем. С тех пор сама причина того
+     * сбоя устранена (Tab перестал быть клавишей смены фокуса, см.
+     * setFocusTraversalKeysEnabled(false) в конструкторе), так что
+     * возвращаемся к правильному режиму.
      */
     public void setFullscreen(boolean on) {
         if (on == fullscreen) return;
 
         synchronized (peerLock) {
-            frame.setVisible(false);
-            frame.dispose();
             if (on) {
+                fullscreenDevice = currentDevice();
+                frame.setVisible(false);
+                frame.dispose();
                 frame.setUndecorated(true);
-                var bounds = GraphicsEnvironment.getLocalGraphicsEnvironment()
-                        .getDefaultScreenDevice().getDefaultConfiguration().getBounds();
-                frame.setBounds(bounds);
-                frame.setVisible(true);
+                frame.setResizable(false);
+                fullscreenDevice.setFullScreenWindow(frame);
             } else {
+                if (fullscreenDevice != null) fullscreenDevice.setFullScreenWindow(null);
+                fullscreenDevice = null;
+                frame.setVisible(false);
+                frame.dispose();
                 frame.setUndecorated(false);
                 frame.pack();
                 frame.setLocationRelativeTo(null);
@@ -182,6 +193,19 @@ public class GameWindow {
             canvas.createBufferStrategy(2);
             canvas.requestFocus();
         }
+    }
+
+    /**
+     * Устройство, на котором окно реально сейчас находится — а не всегда
+     * "дефолтное" устройство ОС. На мультимониторных стендах игра могла
+     * оказаться не на первичном экране, и fullscreen считался по чужому
+     * разрешению: картинка выходила то мельче реального экрана, то крупнее
+     * (верхний HP-бар и нижняя подсказка утекали за границу).
+     */
+    private GraphicsDevice currentDevice() {
+        var gc = frame.getGraphicsConfiguration();
+        if (gc != null) return gc.getDevice();
+        return GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
     }
 
     public Input getInput() {

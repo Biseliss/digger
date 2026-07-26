@@ -27,8 +27,8 @@ public class SmokeTest {
         new WorldGenerator(Constants.DEFAULT_SEED).generateInto(f);
 
         // 1. копание вниз от поверхности.
-        // Начинаем в стороне от базы: вокруг спавна копать запрещено (SPAWN_PROTECT_RADIUS)
-        int digX = Constants.WORLD_W / 2 + (int) Constants.SPAWN_PROTECT_RADIUS + 6;
+        // Начинаем в стороне от базы: вся зона вокруг спавна — несокрушимый бедрок
+        int digX = Constants.WORLD_W / 2 + Constants.BASE_PROTECT_HALF_WIDTH + 6;
         Player p = new Player(digX, Constants.SURFACE_Y - 2);
         // цель — не жёсткое число, а глубина, докуда достаёт СТАРТОВАЯ кирка:
         // ниже слоя 2 нужен уже медный тир, а границы слоёв ещё и волнистые
@@ -36,6 +36,26 @@ public class SmokeTest {
         for (int i = 0; i < 400 && p.depth() < digTarget; i++) {
             int tx = (int) p.centerTileX();
             int ty = (int) (p.centerTileY() + 1);
+
+            // Свежая волна видимости в начале КАЖДОЙ итерации, а не только когда
+            // основной колодец реально копает: иначе, стоит колодцу провалиться
+            // в естественную пещеру (они теперь начинаются мельче, п.1) хоть на
+            // шаг, frame больше не обновляется и isVisibleNow ниже сверяется со
+            // старым кадром — dig() молча отказывает вообще везде.
+            frame++;
+            f.updateVisibility(p.centerTileX(), p.centerTileY(), 12, frame);
+
+            // вскрываем тайлы по бокам — короткий демо-мир (п.1) даёт прямому
+            // колодцу слишком мало тайлов, чтобы надёжно зацепить руду
+            for (int dx = -2; dx <= 2; dx++) {
+                int sx = tx + dx;
+                if (!f.isSolid(sx, ty)) continue;
+                if (p.distanceToTile(sx + 0.5, ty + 0.5) > Constants.DIG_REACH) continue;
+                for (Block b : p.dig(f, sx, ty, 1.0, frame)) {
+                    if (b.drop() != null) p.addOre(b.drop());
+                }
+            }
+
             java.util.List<Block> broken = java.util.List.of();
             for (int k = 0; k < 200 && broken.isEmpty() && f.isSolid(tx, ty); k++) {
                 frame++;
@@ -43,6 +63,7 @@ public class SmokeTest {
                 broken = p.dig(f, tx, ty, 1.0 / 60, frame);
             }
             for (Block b : broken) if (b.drop() != null) p.addOre(b.drop());
+
             for (int k = 0; k < 30; k++) p.tick(1.0 / 60, f, false, false, false, false);
         }
         check("докопался деревянной киркой до " + digTarget + " тайлов (глубина " + p.depth() + ")",
@@ -159,22 +180,60 @@ public class SmokeTest {
         check("S опускает по лестнице (" + topY + " -> " + climber.getY() + ")",
                 climber.getY() > topY);
 
-        // 13. снятая лестница возвращается в инвентарь
-        Player miner = new Player(cx + 1, floorY - 2);
+        // 13a. копка СЕРЕДИНЫ лестницы: в инвентарь возвращается только выкопанный
+        // тайл, огрызок у пола (подкреплён снизу) остаётся стоять, а оторванный
+        // от опоры кусок сверху обрушивается сам — а не висит и не собирается весь разом
+        int lx2 = 30;
+        int floorY2 = Constants.SURFACE_Y + 40;
+        for (int y = floorY2 - 12; y < floorY2; y++) f.setBlock(lx2, y, new AirBlock(lx2, y));
+        f.setBlock(lx2, floorY2, new SolidBlock(lx2, floorY2, BlockType.STONE));
+        for (int y = floorY2 - 1; y >= floorY2 - 10; y--) f.placeLadder(lx2, y);
+
+        Player miner = new Player(lx2 + 1, floorY2 - 2);
         miner.addUtility(UtilityType.LADDER, 1);
         int had = miner.getUtility(UtilityType.LADDER);
-        java.util.List<Block> brokenLadders = java.util.List.of();
-        for (int k = 0; k < 200 && brokenLadders.isEmpty(); k++) {
+
+        java.util.List<Block> brokenMid = java.util.List.of();
+        for (int k = 0; k < 200 && brokenMid.isEmpty(); k++) {
             frame++;
             f.updateVisibility(miner.centerTileX(), miner.centerTileY(), 12, frame);
-            brokenLadders = miner.dig(f, cx, floorY - 2, 1.0 / 60, frame);
+            brokenMid = miner.dig(f, lx2, floorY2 - 2, 1.0 / 60, frame);
         }
-        for (Block b : brokenLadders) miner.addUtility(UtilityType.LADDER);
-        check("лестница ломается и вся колонна возвращается в инвентарь ("
-                        + brokenLadders.size() + " шт)",
-                brokenLadders.size() > 1
-                        && brokenLadders.stream().allMatch(b -> b.getType() == BlockType.LADDER)
-                        && miner.getUtility(UtilityType.LADDER) == had + brokenLadders.size());
+        for (Block b : brokenMid) miner.addUtility(UtilityType.LADDER);
+
+        check("копка середины лестницы возвращает только выкопанный тайл (" + brokenMid.size() + " шт)",
+                brokenMid.size() == 1 && miner.getUtility(UtilityType.LADDER) == had + 1);
+        check("огрызок лестницы у пола остался — он подкреплён снизу",
+                f.isLadder(lx2, floorY2 - 1));
+        check("оторванный от опоры кусок лестницы обрушился сам, без сбора в карман",
+                !f.isLadder(lx2, floorY2 - 5) && !f.isLadder(lx2, floorY2 - 10));
+
+        // 13b. баг из репорта: ломаем ЯКОРНЫЙ блок под лестницей — она должна
+        // обрушиться, а не остаться висеть в воздухе
+        int lx3 = 40;
+        int floorY3 = Constants.SURFACE_Y + 40;
+        for (int y = floorY3 - 6; y < floorY3; y++) f.setBlock(lx3, y, new AirBlock(lx3, y));
+        f.setBlock(lx3, floorY3, new SolidBlock(lx3, floorY3, BlockType.STONE));
+        for (int y = floorY3 - 1; y >= floorY3 - 5; y--) f.placeLadder(lx3, y);
+        check("лестница встала на якорь", f.isLadder(lx3, floorY3 - 1));
+
+        f.breakBlock(lx3, floorY3);   // ломаем сам якорный блок, а не лестницу
+        check("после поломки якоря лестница обрушивается, а не висит в воздухе",
+                !f.isLadder(lx3, floorY3 - 1) && !f.isLadder(lx3, floorY3 - 5));
+
+        // 13c. мостики — та же логика, только горизонтально (доп.)
+        int by = Constants.SURFACE_Y + 50;
+        int bx0 = 60;
+        for (int x = bx0; x < bx0 + 8; x++) f.setBlock(x, by, new AirBlock(x, by));
+        f.setBlock(bx0 - 1, by, new SolidBlock(bx0 - 1, by, BlockType.STONE));   // якорь слева
+
+        check("мостик нельзя поставить вдали от опоры", !f.canPlaceBridge(bx0 + 3, by));
+        for (int x = bx0; x < bx0 + 6; x++) f.placeBridge(x, by);
+        check("мостик встал цепочкой от опоры", f.isBridge(bx0, by) && f.isBridge(bx0 + 5, by));
+
+        f.breakBlock(bx0 - 1, by);   // ломаем якорь моста
+        check("мостик без опоры обрушивается так же, как лестница",
+                !f.isBridge(bx0, by) && !f.isBridge(bx0 + 5, by));
 
         System.out.println(failed == 0 ? "\nВСЕ ПРОВЕРКИ ПРОШЛИ" : "\nПРОВАЛЕНО: " + failed);
         System.exit(failed == 0 ? 0 : 1);

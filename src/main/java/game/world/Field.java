@@ -216,37 +216,18 @@ public class Field {
 
     /**
      * Убирает блок и запускает всё, что за этим следует: задний план,
-     * обвал гравия сверху и каскад лавы.
+     * обвал гравия сверху, каскад лавы, и обрушение лестниц/мостиков,
+     * лишившихся опоры.
      *
-     * @return все реально разрушенные блоки — обычно один, но у лестницы
-     *         осыпается вся колонна, и вызывающему нужно вернуть игроку всё.
+     * @return разрушенный блок — ровно один. Лестница/мостик больше не тянут
+     *         за собой всю конструкцию: то, что реально повисло без опоры,
+     *         обрушивается само по себе через onTileFreed (доп.), а не
+     *         возвращается игроку заодно с тем, что он выкопал специально.
      */
     public List<Block> breakBlock(int tx, int ty) {
         Block b = getBlock(tx, ty);
         if (!inBounds(tx, ty) || b.isAir() || !b.getType().breakable) return List.of();
-
-        List<Block> broken = new ArrayList<>();
-        if (b.getType() == BlockType.LADDER) {
-            breakLadderColumn(tx, ty, broken);
-        } else {
-            broken.add(removeTile(tx, ty));
-        }
-        return broken;
-    }
-
-    /**
-     * Лестница держится всей колонной: выбили один блок — осыпается и то, что
-     * над ним, и то, что под ним (иначе в воздухе повисали бы обрывки).
-     */
-    private void breakLadderColumn(int tx, int ty, List<Block> out) {
-        int top = ty;
-        while (isLadder(tx, top - 1)) top--;
-        int bottom = ty;
-        while (isLadder(tx, bottom + 1)) bottom++;
-
-        for (int y = top; y <= bottom; y++) {
-            out.add(removeTile(tx, y));
-        }
+        return List.of(removeTile(tx, ty));
     }
 
     /**
@@ -263,13 +244,65 @@ public class Field {
         return b;
     }
 
-    /** Тайл освободился — проверяем, что там сверху: гравий падает, лава течёт. */
+    /**
+     * Тайл освободился — гравий падает, лава течёт, а соседние лестницы и
+     * мостики проверяются на обрушение (доп.): раньше, если сломать якорный
+     * плотный блок, под/над который ставили лестницу, она просто повисала в
+     * воздухе — ничего не пересчитывало её опору вообще.
+     */
     public void onTileFreed(int tx, int ty) {
         Block above = getBlock(tx, ty - 1);
         if (above.getType() == BlockType.GRAVEL) {
             startFalling(tx, ty - 1);
         } else if (above.getType() == BlockType.LAVA) {
             cascadeLava(tx, ty);
+        }
+        collapseUnsupported(tx, ty);
+    }
+
+    /**
+     * Обрушение без опоры (доп.). Лестница держится вертикальной цепочкой,
+     * мостик — горизонтальной, но в итоге оба должны упираться хотя бы одним
+     * концом в твёрдый блок. Освободившийся тайл проверяем в обе стороны его
+     * "своей" оси: если соседняя лестница/мостик потеряли последнюю опору —
+     * рушится только реально повисший кусок, а не вся конструкция целиком.
+     */
+    private void collapseUnsupported(int tx, int ty) {
+        collapseLadderRun(tx, ty - 1);
+        collapseLadderRun(tx, ty + 1);
+        collapseBridgeRun(tx - 1, ty);
+        collapseBridgeRun(tx + 1, ty);
+    }
+
+    private void collapseLadderRun(int tx, int ty) {
+        if (!isLadder(tx, ty)) return;
+        int top = ty;
+        while (isLadder(tx, top - 1)) top--;
+        int bottom = ty;
+        while (isLadder(tx, bottom + 1)) bottom++;
+        if (isSolid(tx, top - 1) || isSolid(tx, bottom + 1)) return;   // ещё держится
+
+        for (int y = top; y <= bottom; y++) {
+            Block b = getBlock(tx, y);
+            setBlock(tx, y, new AirBlock(tx, y));
+            b.onBreak(this);
+            onTileFreed(tx, y);   // цепная реакция — вдруг тут держалось что-то ещё
+        }
+    }
+
+    private void collapseBridgeRun(int tx, int ty) {
+        if (!isBridge(tx, ty)) return;
+        int left = tx;
+        while (isBridge(left - 1, ty)) left--;
+        int right = tx;
+        while (isBridge(right + 1, ty)) right++;
+        if (isSolid(left - 1, ty) || isSolid(right + 1, ty)) return;   // ещё держится
+
+        for (int x = left; x <= right; x++) {
+            Block b = getBlock(x, ty);
+            setBlock(x, ty, new AirBlock(x, ty));
+            b.onBreak(this);
+            onTileFreed(x, ty);
         }
     }
 
@@ -301,17 +334,6 @@ public class Field {
 
     // --- лестницы (п.8): теперь обычный блок, отдельных сущностей нет ---
 
-    /**
-     * Зона вокруг точки спавна, где копать запрещено: под базой должна
-     * оставаться твёрдая земля, а игрок после респавна — не проваливаться
-     * в собственную яму.
-     */
-    public boolean isSpawnProtected(int tx, int ty) {
-        double dx = tx + 0.5 - (Constants.WORLD_W / 2.0);
-        double dy = ty + 0.5 - Constants.SURFACE_Y;
-        return Math.sqrt(dx * dx + dy * dy) <= Constants.SPAWN_PROTECT_RADIUS;
-    }
-
     public boolean isLadder(int tx, int ty) {
         return getBlock(tx, ty).getType() == BlockType.LADDER;
     }
@@ -333,6 +355,28 @@ public class Field {
     public void placeLadder(int tx, int ty) {
         if (!canPlaceLadder(tx, ty)) return;
         setBlock(tx, ty, new LadderBlock(tx, ty));
+        reveal(tx, ty);
+    }
+
+    // --- мостики (доп.): то же самое, но опора по бокам, а не сверху/снизу ---
+
+    public boolean isBridge(int tx, int ty) {
+        return getBlock(tx, ty).getType() == BlockType.BRIDGE;
+    }
+
+    /**
+     * Мостик — твёрдый блок (BRIDGE.solid), поэтому цепочку "мостик на мостике"
+     * уже покрывает обычная проверка isSolid — отдельно проверять isBridge не
+     * нужно, в отличие от нетвёрдой лестницы.
+     */
+    public boolean canPlaceBridge(int tx, int ty) {
+        if (!inBounds(tx, ty) || !getBlock(tx, ty).isAir()) return false;
+        return isSolid(tx - 1, ty) || isSolid(tx + 1, ty);
+    }
+
+    public void placeBridge(int tx, int ty) {
+        if (!canPlaceBridge(tx, ty)) return;
+        setBlock(tx, ty, new BridgeBlock(tx, ty));
         reveal(tx, ty);
     }
 

@@ -24,6 +24,7 @@ public class MainMenu {
     private final int screenH;
     private final Screen mainScreen;
     private final Screen settingsScreen;
+    private final Screen guideScreen;
 
     /** Играет, пока мы в меню; останавливается на старте игры — у Game своя (п.3). */
     private final Audio music = new Audio();
@@ -34,6 +35,7 @@ public class MainMenu {
         this.screenH = screenH;
         this.settingsScreen = buildSettingsScreen();
         this.mainScreen = buildMainScreen();
+        this.guideScreen = GuideScreen.build(screenW, screenH, () -> window.setScreen(mainScreen));
 
         music.setFile("Soundtrack");
         music.setVolume(AppSettings.musicVolume);
@@ -57,7 +59,9 @@ public class MainMenu {
         screen.addChild(new Button(bx, by, bw, bh, "Start Game", this::startGame));
         screen.addChild(new Button(bx, by + (bh + gap), bw, bh, "Settings",
                 () -> window.setScreen(settingsScreen)));
-        screen.addChild(new Button(bx, by + (bh + gap) * 2, bw, bh, "Quit", () -> System.exit(0)));
+        screen.addChild(new Button(bx, by + (bh + gap) * 2, bw, bh, "Guide",
+                () -> window.setScreen(guideScreen)));
+        screen.addChild(new Button(bx, by + (bh + gap) * 3, bw, bh, "Quit", () -> System.exit(0)));
 
         return screen;
     }
@@ -86,8 +90,14 @@ public class MainMenu {
         return screen;
     }
 
+    /** Интро (п.2) — перед самой первой раскопкой, а не внутри Game самой. */
     private void startGame() {
         music.stop();   // у Game своя дорожка на том же треке — не наслаиваем
+        IntroScreen intro = new IntroScreen(screenW, screenH, this::launchGame);
+        window.setScreen(intro.getScreen());
+    }
+
+    private void launchGame() {
         Game game = new Game(window.getInput(), screenW, screenH, this::returnToMenu);
         window.setScene(game);
     }

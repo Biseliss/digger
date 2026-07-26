@@ -4,6 +4,7 @@ import game.Constants;
 import game.Game;
 import game.entity.Player;
 import game.item.OreType;
+import game.item.Tool;
 import game.item.UtilityType;
 import game.render.Textures;
 import java.awt.Color;
@@ -51,6 +52,7 @@ public class HudView extends UIObject {
 
         drawStats(g, p);
         drawOres(g, p);
+        drawGoal(g, p);
         drawPrompt(g);
         drawStuckHint(g);
         drawOverlayMessage(g);
@@ -89,6 +91,23 @@ public class HudView extends UIObject {
             if (!type.passive) g.drawString("x" + count, x + 18, y + 13);
             x += type.passive ? 22 : 44;
         }
+
+        drawPressureHint(g, p);
+    }
+
+    private static final Color WARNING = new Color(255, 180, 90);
+
+    /**
+     * Фидбек игроков: несколько раз умирали от давления в глубоких слоях и
+     * не понимали, чем с ним бороться. Подсказка появляется, как только
+     * куплена каменная кирка (то есть игрок уже способен закопаться туда,
+     * где давление реально бьёт), и пропадает, как только броня куплена.
+     */
+    private void drawPressureHint(Graphics2D g, Player p) {
+        if (p.getTool().getLevel() < 1 || p.hasArmor()) return;
+        g.setFont(SMALL);
+        g.setColor(WARNING);
+        g.drawString("Tip: buy Armor at the shop - it stops the deep-layer pressure damage", 12, 118);
     }
 
     private static final Color UNKNOWN = new Color(140, 140, 140);
@@ -133,6 +152,68 @@ public class HudView extends UIObject {
         g.setColor(new Color(30, 20, 10));
         g.fillRect(cx - 1, y + 4, 2, 6);      // палочка
         g.fillRect(cx - 1, y + 12, 2, 2);     // точка
+    }
+
+    private static final Color GOAL_TITLE = new Color(242, 213, 68);
+    private static final Color GOAL_DONE = new Color(120, 220, 120);
+    private static final Color GOAL_PENDING = new Color(210, 210, 210);
+
+    /**
+     * "Next Goal" под списком руд (п.4): что покупаем следующим и чего для
+     * этого не хватает. После падения в финальную комнату (п.6) переключается
+     * на единственную оставшуюся цель — сама кирка тут уже ни при чём.
+     */
+    private void drawGoal(Graphics2D g, Player p) {
+        String title;
+        String[] items;
+        boolean[] done;
+
+        if (game.isEndgameTriggered()) {
+            title = "Goal: Dig.";
+            items = new String[]{"Explore the underground in search of something unusual"};
+            done = new boolean[]{false};
+        } else {
+            Tool tool = p.getTool();
+            if (tool.isMaxed()) {
+                title = "Goal: Dig deeper.";
+                items = new String[]{"Find the bottom of the mine"};
+                done = new boolean[]{false};
+            } else {
+                OreType material = tool.getUpgradeMaterial();
+                int neededMoney = tool.getUpgradePrice();
+                int neededOre = tool.getUpgradeMaterialAmount();
+                title = "Goal: Buy " + tool.getNextName() + " Pickaxe.";
+                items = new String[]{
+                        "Earn $" + neededMoney,
+                        "Collect " + neededOre + " " + material.displayName
+                };
+                done = new boolean[]{
+                        p.getMoney() >= neededMoney,
+                        p.getOreCount(material) >= neededOre
+                };
+            }
+        }
+
+        int lineH = 18;
+        int padding = 8;
+        int boxW = 260;
+        int boxH = padding * 2 + lineH * (1 + items.length);
+        int x = width - 12 - boxW;
+        int y = 12 + OreType.values().length * 20 + 10;
+
+        g.setColor(PANEL);
+        g.fillRect(x, y, boxW, boxH);
+
+        g.setFont(FONT);
+        g.setColor(GOAL_TITLE);
+        g.drawString(title, x + padding, y + padding + 12);
+
+        g.setFont(SMALL);
+        for (int i = 0; i < items.length; i++) {
+            String box = done[i] ? "[x] " : "[ ] ";
+            g.setColor(done[i] ? GOAL_DONE : GOAL_PENDING);
+            g.drawString(box + items[i], x + padding, y + padding + (i + 2) * lineH - 4);
+        }
     }
 
     /** Подсказка рядом с игроком: NPC, лестница, товар торговца. */

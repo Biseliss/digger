@@ -24,6 +24,8 @@ public abstract class NpcPoint {
     private Animation idleAnim;
     /** Иконка над головой (какая руда/кирка/утилита сейчас актуальна) — null, если её нет (п.4, доп.). */
     private java.util.function.Supplier<String> overheadIcon;
+    /** Почему не удалась последняя покупка — Game показывает это текстом (п.3, доп.). */
+    private String pendingError;
 
     protected NpcPoint(int tileX, int tileY, String texture, String title) {
         this(tileX, tileY, texture, title, 1, 2);
@@ -52,6 +54,14 @@ public abstract class NpcPoint {
         if (idleAnim != null) idleAnim.tick(dt);
     }
 
+    /**
+     * Q/колесо мыши, пока игрок рядом — листает товар/режим (п.9, доп.).
+     * No-op по умолчанию: у большинства NPC листать нечего (кузнец, сундук).
+     */
+    public void cycle(int direction) {
+        // нет режимов по умолчанию
+    }
+
     public String getTitle() {
         return title;
     }
@@ -65,6 +75,18 @@ public abstract class NpcPoint {
 
     /** Нажали E. @return true, если это была успешная покупка (для эффекта монет, п.3). */
     public abstract boolean interact(Player p);
+
+    /** Вызывать из interact() при отказе — почему именно не получилось (п.3, доп.). */
+    protected void setError(String message) {
+        this.pendingError = message;
+    }
+
+    /** Game читает и сразу сбрасывает — сообщение показывается один раз. */
+    public String consumeError() {
+        String e = pendingError;
+        pendingError = null;
+        return e;
+    }
 
     public void draw(Graphics2D g, double camX, double camY) {
         int scale = Constants.SCALE;

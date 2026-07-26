@@ -88,10 +88,14 @@ public class Dynamite {
         }
     }
 
-    /** Руду — в карман, свои лестницы — обратно в стак. */
+    /** Руду — в карман, свои лестницы и мостики — обратно в стак. */
     private static void collect(Player player, Block broken) {
         if (broken.getType() == game.world.BlockType.LADDER) {
             player.addUtility(game.item.UtilityType.LADDER);
+            return;
+        }
+        if (broken.getType() == game.world.BlockType.BRIDGE) {
+            player.addUtility(game.item.UtilityType.BRIDGE);
             return;
         }
         OreType ore = broken.drop();

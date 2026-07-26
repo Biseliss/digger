@@ -42,6 +42,7 @@ public class WorldGenerator {
         generateCaves();
         generateHazards();
         generateOres();
+        protectSpawnArea();
         carveCoreRoom();
         writeToField(field);
     }
@@ -97,8 +98,11 @@ public class WorldGenerator {
             double centerFactor = 1.0 - Math.abs(t - 0.5) * 2.0;   // 0 у краёв, 1 в центре
             if (rnd.nextDouble() > 0.25 + centerFactor * 0.75) continue;
 
-            int length = (int) (18 + centerFactor * 70 + rnd.nextInt(20));
-            double radius = 1.2 + centerFactor * 2.0 + rnd.nextDouble();
+            // Длина/радиус были подобраны под старый мир (слой 4 на глубине 110);
+            // в укороченном демо-мире (п.1, ~48) те же числа выедали почти весь
+            // мимо-проходной слой камня одним-двумя червями — масштабируем вниз.
+            int length = (int) (10 + centerFactor * 24 + rnd.nextInt(8));
+            double radius = 1.0 + centerFactor * 1.0 + rnd.nextDouble() * 0.6;
 
             digWorm(startX, startY, length, radius, i);
         }
@@ -250,6 +254,31 @@ public class WorldGenerator {
             px += rnd.nextInt(3) - 1;
             py += rnd.nextInt(3) - 1;
             if (!Field.inBounds(px, py)) break;
+        }
+    }
+
+    // --- 4.5. Защита базы (фидбек игроков) ---
+
+    /**
+     * Раньше базу защищал радиус-2 вокруг точки спавна (Player.dig), а NPC
+     * стоят на ±3..±8 тайлов от центра — игроки успевали раскопать землю
+     * прямо под ними и потом не могли дотянуться. Вместо проверки радиуса —
+     * настоящий бедрок в широкой прямоугольной зоне: и не выкопать в
+     * принципе, и видно с первого взгляда, что здесь копать нельзя (другая
+     * текстура, а не обычная порода).
+     */
+    private void protectSpawnArea() {
+        int cx = Constants.WORLD_W / 2;
+        int left = Math.max(0, cx - Constants.BASE_PROTECT_HALF_WIDTH);
+        int right = Math.min(Constants.WORLD_W - 1, cx + Constants.BASE_PROTECT_HALF_WIDTH);
+        int top = Constants.SURFACE_Y;
+        int bottom = Math.min(Constants.WORLD_H - 1, Constants.SURFACE_Y + Constants.BASE_PROTECT_DEPTH - 1);
+
+        for (int x = left; x <= right; x++) {
+            for (int y = top; y <= bottom; y++) {
+                tiles[x][y] = BlockType.BEDROCK;
+                ores[x][y] = null;   // под бедроком руда всё равно не выкопается — не дразним оверлеем
+            }
         }
     }
 
